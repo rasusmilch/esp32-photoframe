@@ -22,6 +22,8 @@ set(SOURCES
     "cron.c"
     "utils.c"
     "wifi_manager.c"
+    "wifi_import.c"
+    "wifi_import_runtime.c"
     "wifi_provisioning.c"
 )
 

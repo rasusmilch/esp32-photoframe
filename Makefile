@@ -1,4 +1,4 @@
-.PHONY: format format-check format-diff test test-provisioning-form help install-hooks
+.PHONY: format format-check format-diff test test-provisioning-form test-wifi-import help install-hooks
 
 # Use clang-format-18 for consistency with CI
 # On macOS: brew install llvm@18 && brew link llvm@18
@@ -22,6 +22,7 @@ help:
 	@echo "  format-diff   - Show what would change without modifying files"
 	@echo "  test          - Build and run unit tests (requires ESP-IDF environment)"
 	@echo "  test-provisioning-form - Run dependency-free provisioning boundary tests"
+	@echo "  test-wifi-import - Run dependency-free wifi.txt import tests"
 	@echo "  install-hooks - Enable the git pre-commit formatting hook (.githooks)"
 
 install-hooks:
@@ -78,6 +79,7 @@ format-diff:
 
 test:
 	@$(MAKE) test-provisioning-form
+	@$(MAKE) test-wifi-import
 	@echo "Building and running host-based unit tests..."
 	@mkdir -p host_tests/build
 	@cd host_tests/build && cmake .. && make
@@ -96,3 +98,10 @@ test-provisioning-form:
 		main/provisioning_form.c host_tests/test_provisioning_form.c \
 		-o host_tests/build/provisioning_form_test
 	@./host_tests/build/provisioning_form_test
+
+test-wifi-import:
+	@mkdir -p host_tests/build
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -Imain \
+		main/wifi_import.c host_tests/test_wifi_import.c \
+		-o host_tests/build/wifi_import_test
+	@./host_tests/build/wifi_import_test

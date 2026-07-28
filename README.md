@@ -212,7 +212,7 @@ The device supports two methods for WiFi provisioning:
 
 2. Insert SD card and power on the device
 3. Device automatically reads credentials, saves to memory, and connects
-4. **Current implementation limitation:** the source reads the file but does not delete it. The accepted consume-once contract requires complete validation and durable NVS commit before deleting the exact imported file; see [Operations](docs/OPERATIONS.md).
+4. The bounded importer commits and verifies the complete profile before deleting the exact source file. A retained already-applied file is deletion-only recovery; see [Operations](docs/OPERATIONS.md).
 
 **Current implementation limitation:** a connection failure can clear credentials and restart. This is not accepted recovery behavior. The target preserves last-known-good credentials, keeps the local slideshow running, and retries in the background at a configurable interval (15 minutes by default).
 

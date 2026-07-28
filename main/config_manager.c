@@ -477,6 +477,20 @@ const char *config_manager_get_device_name(void)
     return device_name;
 }
 
+void config_manager_apply_imported_profile(const char *ssid, const char *password,
+                                           const char *imported_device_name)
+{
+    if (ssid == NULL || password == NULL || imported_device_name == NULL) {
+        return;
+    }
+    strncpy(wifi_ssid, ssid, sizeof(wifi_ssid) - 1U);
+    wifi_ssid[sizeof(wifi_ssid) - 1U] = '\0';
+    strncpy(wifi_password, password, sizeof(wifi_password) - 1U);
+    wifi_password[sizeof(wifi_password) - 1U] = '\0';
+    strncpy(device_name, imported_device_name, sizeof(device_name) - 1U);
+    device_name[sizeof(device_name) - 1U] = '\0';
+}
+
 void config_manager_set_timezone(const char *tz)
 {
     if (tz == NULL) {

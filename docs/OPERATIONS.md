@@ -14,17 +14,18 @@ The portal is an operator provisioning channel, not a prerequisite for local sli
 
 ## `wifi.txt` import
 
-Current source searches `/storage/config/wifi.txt` before `/storage/wifi.txt`. At the adoption snapshot it reads but does not delete the file and may restart after saving; this is a known gap.
+Current source searches `/storage/config/wifi.txt` before `/storage/wifi.txt` on SD-capable boards. The file is positional: line 1 is a non-empty SSID (maximum 31 bytes), line 2 is a required password line that may be empty (maximum 63 bytes), and line 3 is an optional device name (maximum 63 bytes). LF and CRLF are accepted; spaces and a leading `#` are data. An absent or empty third line leaves the current device name unchanged. Up to four trailing empty CRLF lines fit the derived 169-byte ceiling; extra non-empty fields, malformed line endings, NUL, truncation, and overflow are rejected.
 
 Target consume-once sequence:
 
-1. Read the complete exact file and parse all candidate fields without persistence.
-2. Validate credentials and optional device/network settings.
-3. Stage and durably save them, commit, and verify as required.
-4. Delete only the exact successfully imported source.
-5. If deletion fails after commit, suppress repeat import/restart through recoverable committed state.
+1. Read the complete exact file into a fixed buffer and parse all fields without mutation.
+2. Load the active NVS profile; omitted device name inherits its current value.
+3. If different, set SSID, password, and effective device name through one NVS handle and commit once.
+4. Reopen read-only and verify every field exactly, then publish in-memory caches.
+5. Delete only the selected source path after verification. No connection test or import restart occurs.
+6. If deletion fails, the retained file compares equal on the next boot and is deletion-only recovery: credentials are not rewritten and no restart is requested.
 
-Malformed, incomplete, uncommitted, or failed candidates must retain both the file for operator correction and prior valid credentials. Optional device name must not be partially persisted.
+Malformed, incomplete, unreadable, oversized, uncommitted, or unverifiable candidates retain the file and are never deleted by the coordinator. Pre-commit failures preserve the prior profile. A valid file is checked before captive-provisioning state even when credentials already exist, so it can explicitly replace them; failure leaves existing credentials available to the current boot.
 
 ## Unavailable or changed access point
 

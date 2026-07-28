@@ -18,6 +18,10 @@ esp_err_t config_manager_init(void);
 void config_manager_set_device_name(const char *name);
 const char *config_manager_get_device_name(void);
 
+/** Update imported credential/name caches after verified NVS readback; performs no persistence. */
+void config_manager_apply_imported_profile(const char *ssid, const char *password,
+                                           const char *device_name);
+
 void config_manager_set_timezone(const char *tz);
 const char *config_manager_get_timezone(void);
 
