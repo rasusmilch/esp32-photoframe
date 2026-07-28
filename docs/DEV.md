@@ -2,6 +2,8 @@
 
 This guide covers building the firmware from source and advanced configuration options.
 
+It is the authoritative command catalog and code-documentation policy. Status terms are defined in `AGENTS.md`; a command shown here is not verified merely because it exists, and compilation is not hardware validation. In the 2026-07-28 adoption environment, GitHub/internet access and ESP-IDF were unavailable, no board/serial device was supplied, firmware/flash/hardware checks were **environment-limited**, and dependency-fetching tests were also **environment-limited**.
+
 ## Software Requirements
 
 - ESP-IDF v6.0 or later
@@ -45,6 +47,9 @@ cd ..
 
 # Build for Seeed Studio reTerminal E1004 (13.3" 6-color e-paper)
 ./build.py --board seeedstudio_reterminal_e1004
+
+# Build for Seeed Studio reTerminal E1003 (10.3" grayscale e-paper)
+./build.py --board seeedstudio_reterminal_e1003
 
 # Clean build (optional)
 ./build.py --board waveshare_photopainter_73 --fullclean
@@ -100,6 +105,30 @@ idf.py -p PORT monitor
 ```
 
 Press `Ctrl+]` to exit the monitor.
+
+## Verification and review command catalog
+
+These commands are derived from current local scripts/workflows:
+
+| Area | Command | Classification at adoption |
+|---|---|---|
+| Formatting | `make format-check` | CI-verified historically; not run here because it may invoke `npm ci` |
+| Host/CLI tests | `make test` | CI-verified historically; environment-limited here (GoogleTest/dependency fetch and generated build directory) |
+| Direct host tests | `cmake -S host_tests -B host_tests/build && cmake --build host_tests/build && ctest --test-dir host_tests/build --output-on-failure` | documented target; environment-limited here |
+| CLI tests | `cd process-cli && npm test` | documented from package scripts; unknown locally |
+| Web tests | `cd webapp && npm test` | documented from package scripts; unknown locally |
+| Web lint | `cd webapp && npm run lint:check` | documented from package scripts; unknown locally |
+| Review | `git diff --check` | verified locally for the governance bootstrap |
+| Focused review | `git diff -- README.md CHANGELOG.md AGENTS.md docs/` | verified locally for scope inspection |
+| Firmware | `python3 build.py --board BOARD` | CI-verified historically for the six IDs below; environment-limited here |
+| Flash/monitor | `idf.py -p PORT flash monitor` | hardware-only; environment-limited here |
+| Hardware | follow `docs/VALIDATION.md` matrix and record observations | pending hardware validation |
+
+Board build IDs are `waveshare_photopainter_73`, `seeedstudio_xiao_ee02`, `seeedstudio_xiao_ee04`, `seeedstudio_reterminal_e1002`, `seeedstudio_reterminal_e1003`, and `seeedstudio_reterminal_e1004`. Use `python3 build.py --board ID` for each. Documentation checks include verifying routed paths exist, checking local relative links, searching for current/target contradictions, and confirming the diff touches documentation only.
+
+## Code-documentation policy
+
+Document public-header contracts, state-machine transitions, task/concurrency ownership, buffer ownership/lifetimes, persistence keys and migration, failure/retry behavior, security-sensitive parsing and redaction, GPIO polarity and evidence, board-specific exceptions, and non-obvious power/wake rationale. Comments must distinguish source-derived assumptions from physical validation; do not present speculative hardware behavior as fact. Update architecture, hardware, operations, testing, decisions, validation, and changelog whenever their contracts are affected.
 
 ### Erase Flash
 
