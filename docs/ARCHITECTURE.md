@@ -2,7 +2,7 @@
 
 ## Current implementation
 
-`main/main.c` orchestrates boot and wake paths. `storage.c`, `album_manager.c`, and `display_manager.c` manage backends, albums, and display/rotation. `wifi_manager.c` and `wifi_provisioning.c` manage station connectivity and captive provisioning. `power_manager.c` owns schedules, active/deep sleep, and wake dispatch. Board hardware is implemented under `components/board_hal`; Home Assistant, OTA, HTTP/mDNS, and periodic tasks are separate modules. Current cold boot still gates normal startup on provisioning/Wi-Fi and navigation lacks previous; these are known gaps, not target architecture.
+`main/main.c` orchestrates boot and wake paths. `storage.c`, `album_manager.c`, and `display_manager.c` manage backends, albums, and display/rotation. `wifi_manager.c` and `wifi_provisioning.c` manage station connectivity and captive provisioning. `provisioning_form.c` is now a pure C boundary that strictly parses bounded pointer-and-length form bodies and provides a callback-driven exact reader; the HTTP adapter validates the complete candidate and IPv4 values before configuration or Wi-Fi side effects. `power_manager.c` owns schedules, active/deep sleep, and wake dispatch. Board hardware is implemented under `components/board_hal`; Home Assistant, OTA, HTTP/mDNS, and periodic tasks are separate modules. Current cold boot still gates normal startup on provisioning/Wi-Fi and navigation lacks previous; these are known gaps, not target architecture.
 
 ## Required target boundaries
 
@@ -20,4 +20,4 @@
 
 ## Open implementation design questions
 
-Later design must settle image-identity representation, retry ownership, the precise NVS transaction mechanism, and a safe HTTP-body ceiling. These technical choices cannot weaken `docs/GOVERNANCE.md`.
+Later design must settle image-identity representation, retry ownership, and the precise NVS transaction mechanism. The provisioning body ceiling is resolved at 758 bytes: three times the sum of current decoded value maxima, plus known field names, equals signs, and separators. These technical choices cannot weaken `docs/GOVERNANCE.md`.

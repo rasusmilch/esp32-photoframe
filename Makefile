@@ -1,4 +1,4 @@
-.PHONY: format format-check format-diff test help install-hooks
+.PHONY: format format-check format-diff test test-provisioning-form help install-hooks
 
 # Use clang-format-18 for consistency with CI
 # On macOS: brew install llvm@18 && brew link llvm@18
@@ -21,6 +21,7 @@ help:
 	@echo "  format-check  - Check if files need formatting (non-zero exit if changes needed)"
 	@echo "  format-diff   - Show what would change without modifying files"
 	@echo "  test          - Build and run unit tests (requires ESP-IDF environment)"
+	@echo "  test-provisioning-form - Run dependency-free provisioning boundary tests"
 	@echo "  install-hooks - Enable the git pre-commit formatting hook (.githooks)"
 
 install-hooks:
@@ -76,6 +77,7 @@ format-diff:
 	fi
 
 test:
+	@$(MAKE) test-provisioning-form
 	@echo "Building and running host-based unit tests..."
 	@mkdir -p host_tests/build
 	@cd host_tests/build && cmake .. && make
@@ -87,3 +89,10 @@ test:
 	@cd process-cli && npm install --silent && npm run test:orientation
 	@echo ""
 	@echo "✓ All tests passed!"
+
+test-provisioning-form:
+	@mkdir -p host_tests/build
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -Imain \
+		main/provisioning_form.c host_tests/test_provisioning_form.c \
+		-o host_tests/build/provisioning_form_test
+	@./host_tests/build/provisioning_form_test

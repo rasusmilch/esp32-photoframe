@@ -12,6 +12,7 @@ Every observation records: date; local SHA; branch; board/revision; firmware con
 |---|---|---|---|---|---|---|
 | 2026-07-28 | `905c829949f7f8a30600b0011c02817217c1d59c` / `work` | Governance source inspection | Six boards and documented current gaps found; no runtime validation claimed | Codex | passed | DEC-014/015; local files only |
 | 2026-07-28 | same | Firmware build and hardware validation | Not runnable / no ESP-IDF, network, board, or serial device | Codex | environment-limited | All runtime REQs; no physical evidence |
+| 2026-07-28 | `5a11857edb220c94a53abdda4ff92892c75d889b` / `work` | Strict provisioning parser and exact-body reader | `make test-provisioning-form` and direct strict C11 compile both completed; all boundary tests passed | Codex | passed | REQ-PROVISION-001/002/003, REQ-SEC-001/002, DEC-012; host-only, no ESP-IDF adapter build |
 
 ## Pending physical matrices
 

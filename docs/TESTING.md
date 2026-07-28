@@ -12,7 +12,7 @@ Every normative requirement needs a host test, build/review check, or hardware-v
 6. E1002/E1004 physical validation, then remaining-board preservation validation.
 7. Security/log-redaction and documentation/governance checks.
 
-Current host CMake tests cover cron and wake scheduling, while `make test` also runs CLI orientation tests. The adopted scenarios below remain pending until implemented unless `docs/VALIDATION.md` records observation.
+Current host CMake tests cover cron and wake scheduling, while `make test` also runs CLI orientation tests. `make test-provisioning-form` is self-contained and compiles the pure provisioning module with C11, `-Wall`, `-Wextra`, `-Werror`, and `-pedantic`; the aggregate test target invokes it before dependency-fetching tests. It covers exact/partial reads, EOF/errors/bounded timeouts and sentinels, form ordering and unknown fields, strict escapes/forbidden bytes, duplicates, presence versus emptiness, every destination overflow, IP-mode requirements, the decoded 63/64-byte password boundary, and the derived 758-byte body boundary. Remaining adopted scenarios stay pending unless `docs/VALIDATION.md` records observation.
 
 ## Required scenarios
 

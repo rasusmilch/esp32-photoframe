@@ -9,3 +9,9 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
 - Added repository-wide authority routing and adopted offline-first and compatibility requirements.
 - Added architecture, hardware, operations, testing, decision, and validation authorities.
 - No firmware runtime behavior changed.
+
+### Security
+
+- Hardened captive provisioning with complete bounded body reception, strict URL-form decoding,
+  decoded-length enforcement, duplicate-field rejection, and validation before configuration or
+  Wi-Fi side effects.

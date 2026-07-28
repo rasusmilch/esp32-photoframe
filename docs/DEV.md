@@ -113,6 +113,7 @@ These commands are derived from current local scripts/workflows:
 | Area | Command | Classification at adoption |
 |---|---|---|
 | Formatting | `make format-check` | CI-verified historically; not run here because it may invoke `npm ci` |
+| Provisioning boundary | `make test-provisioning-form` | verified locally; dependency-free C11 strict compile and tests |
 | Host/CLI tests | `make test` | CI-verified historically; environment-limited here (GoogleTest/dependency fetch and generated build directory) |
 | Direct host tests | `cmake -S host_tests -B host_tests/build && cmake --build host_tests/build && ctest --test-dir host_tests/build --output-on-failure` | documented target; environment-limited here |
 | CLI tests | `cd process-cli && npm test` | documented from package scripts; unknown locally |
