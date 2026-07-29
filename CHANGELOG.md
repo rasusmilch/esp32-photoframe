@@ -31,3 +31,6 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   15-minute default, saturating deadlines, immutable attempt tokens, qualified connection events,
   and completion/cancellation ordering that prevents replacement overlap. Runtime connectivity
   behavior is unchanged pending integration.
+- Added a standalone ESP-IDF Wi-Fi epoch-fence probe and standard-library trace checker with
+  synthetic invariant fixtures. This is validation tooling only; the proposed barrier is not yet
+  approved and production runtime behavior is unchanged.

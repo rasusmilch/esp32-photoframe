@@ -17,6 +17,17 @@ Every observation records: date; local SHA; branch; board/revision; firmware con
 | 2026-07-29 | `6c4608b51c39c6d40f24de1141e9628b6da80ed9` / `work` | Same-boot import ordering and incomplete-profile coordinator recovery | `make test-wifi-import`, `make test-provisioning-form`, and direct strict C11 import compile completed; all focused tests passed; source review placed normal-path import before Wi-Fi/provisioning initialization | Codex | passed | REQ-CREDENTIAL-001/002/003, REQ-WIFI-004, DEC-005; pure coordinator and source-order review only—ESP-IDF, DHCP hostname, NVS/SD, and hardware remain unvalidated |
 | 2026-07-29 | `f62ed3abb4a918df28e97f634b2cdedbaca55fad` / `work` | Pure normal-boot and serialized connectivity-retry policy | All three focused make targets and a direct strict C11 connectivity-policy compile/run passed | Codex | passed | REQ-OFFLINE-001/002/003, REQ-WIFI-001/002/003/004, REQ-CONTROL-001, REQ-COMPAT-001/002; pure policy only, runtime/ESP-IDF/network/hardware unvalidated |
 | 2026-07-29 | `d7bd7b0bc28c83a90f016c95a20015518ee41853` / `work` | Generation-safe connectivity replacement, token completion, cancellation, and qualified connection events | All three focused make targets and a direct strict C11 policy compile/run passed | Codex | passed | REQ-WIFI-002/003/004, REQ-COMPAT-001/002; pure policy only, runtime/ESP-IDF/network/hardware unvalidated |
+| 2026-07-29 | `f98e5d8e6fff1251c53f9b4f9e3b53f8adac3796` / `work` | Offline epoch-trace checker and synthetic invariant fixtures | `make test-wifi-epoch-trace`, direct checker runs, Python syntax compilation, and production-link review passed | Codex | passed | Validation tooling only; probe was not built or run under ESP-IDF and no barrier/runtime claim is validated |
+
+### Pending Wi-Fi epoch-fence matrix
+
+- **E1002 first:** scenarios A–G; at least 25 repetitions each for replacement, timeout, APSTA
+  failure, and rapid replacement; zero old post-fence events, overlap, or lost fences.
+- **E1004 second:** repeat the same matrix only after E1002 passes.
+- Record exact ESP-IDF version/commit, probe commit, board revision, power source, AP model/firmware,
+  signal conditions, and retained trace artifacts. Explicitly observe APSTA→STA behavior.
+- Status: **pending**. No ESP-IDF compilation, physical Wi-Fi, APSTA transition, or board result was
+  produced in this environment; arbitrary delays cannot convert failures into passes.
 
 ## Pending physical matrices
 

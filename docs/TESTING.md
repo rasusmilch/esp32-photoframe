@@ -27,6 +27,14 @@ after polling, immutable/unknown/duplicate tokens, cancellation request versus a
 generation-qualified connection/disconnection, stale disconnects, retry-deadline preservation,
 and proof that no poll reserves a second physical slot. The policy is not runtime validation.
 
+`make test-wifi-epoch-trace` runs the standard-library checker against synthetic pass/fail traces.
+Fixtures cover pre-fence start, owner overlap, post-fence events, wrong-generation GOT_IP,
+pre-fence cancellation/retry, callback reconnect, unattributed events, reused epoch/attempt IDs,
+secret fields, premature release, and fence-before-STA_STOP. The separately buildable probe covers
+failure/retry, replacement, rapid replacement, APSTA failure/success, timeout, and API replacement.
+Its E1002/E1004 repeated physical matrix remains pending; checker success does not validate ESP-IDF
+ordering or the proposed fence.
+
 ## Required scenarios
 
 - **Provisioning:** partial and one-byte reads; truncation; timeout; every field order; duplicate/missing/empty fields; malformed `%` escapes; encoded `&`, `=`, `%`, `+`, and spaces; decoded password lengths 63 valid/64 invalid; oversized body; no secret leakage.

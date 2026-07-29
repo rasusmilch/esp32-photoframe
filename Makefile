@@ -1,4 +1,4 @@
-.PHONY: format format-check format-diff test test-provisioning-form test-wifi-import test-connectivity-policy help install-hooks
+.PHONY: format format-check format-diff test test-provisioning-form test-wifi-import test-connectivity-policy test-wifi-epoch-trace help install-hooks
 
 # Use clang-format-18 for consistency with CI
 # On macOS: brew install llvm@18 && brew link llvm@18
@@ -24,6 +24,7 @@ help:
 	@echo "  test-provisioning-form - Run dependency-free provisioning boundary tests"
 	@echo "  test-wifi-import - Run dependency-free wifi.txt import tests"
 	@echo "  test-connectivity-policy - Run dependency-free boot/retry policy tests"
+	@echo "  test-wifi-epoch-trace - Run dependency-free WiFi epoch trace checker tests"
 	@echo "  install-hooks - Enable the git pre-commit formatting hook (.githooks)"
 
 install-hooks:
@@ -82,6 +83,7 @@ test:
 	@$(MAKE) test-provisioning-form
 	@$(MAKE) test-wifi-import
 	@$(MAKE) test-connectivity-policy
+	@$(MAKE) test-wifi-epoch-trace
 	@echo "Building and running host-based unit tests..."
 	@mkdir -p host_tests/build
 	@cd host_tests/build && cmake .. && make
@@ -114,3 +116,8 @@ test-connectivity-policy:
 		main/connectivity_policy.c host_tests/test_connectivity_policy.c \
 		-o host_tests/build/connectivity_policy_test
 	@./host_tests/build/connectivity_policy_test
+
+test-wifi-epoch-trace:
+	@cd tools/wifi_epoch_fence_probe && python3 -m unittest -v test_checker.py
+	@python3 tools/wifi_epoch_fence_probe/check_trace.py \
+		tools/wifi_epoch_fence_probe/traces/pass_replacement.jsonl

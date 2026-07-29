@@ -1,0 +1,12 @@
+menu "Wi-Fi epoch fence probe"
+config PROBE_WIFI_SSID
+    string "Test AP SSID"
+    default ""
+config PROBE_WIFI_PASSWORD
+    string "Test AP password"
+    default ""
+config PROBE_SCENARIO
+    int "Scenario (1=A fail/retry, 2=B replace, 3=C rapid, 4=D APSTA fail, 5=E APSTA success, 6=F timeout, 7=G API replace)"
+    range 1 7
+    default 1
+endmenu

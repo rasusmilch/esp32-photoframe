@@ -116,6 +116,7 @@ These commands are derived from current local scripts/workflows:
 | Provisioning boundary | `make test-provisioning-form` | verified locally; dependency-free C11 strict compile and tests |
 | Wi-Fi import transaction | `make test-wifi-import` | verified locally; dependency-free C11 transaction, incomplete-profile repair, and recovery tests |
 | Boot/connectivity policy | `make test-connectivity-policy` | verified locally; dependency-free C11 generation-safe boot, token, cancellation, connection-event, and retry tests; runtime integration pending |
+| Wi-Fi epoch traces | `make test-wifi-epoch-trace` | verified locally; standard-library synthetic trace checker only; physical fence pending |
 | Host/CLI tests | `make test` | CI-verified historically; environment-limited here (GoogleTest/dependency fetch and generated build directory) |
 | Direct host tests | `cmake -S host_tests -B host_tests/build && cmake --build host_tests/build && ctest --test-dir host_tests/build --output-on-failure` | documented target; environment-limited here |
 | CLI tests | `cd process-cli && npm test` | documented from package scripts; unknown locally |
@@ -128,6 +129,11 @@ These commands are derived from current local scripts/workflows:
 | Hardware | follow `docs/VALIDATION.md` matrix and record observations | pending hardware validation |
 
 Board build IDs are `waveshare_photopainter_73`, `seeedstudio_xiao_ee02`, `seeedstudio_xiao_ee04`, `seeedstudio_reterminal_e1002`, `seeedstudio_reterminal_e1003`, and `seeedstudio_reterminal_e1004`. Use `python3 build.py --board ID` for each. Documentation checks include verifying routed paths exist, checking local relative links, searching for current/target contradictions, and confirming the diff touches documentation only.
+
+The standalone epoch probe is under `tools/wifi_epoch_fence_probe`. Later, with the exact supported
+ESP-IDF and hardware, use `idf.py set-target esp32s3`, `idf.py menuconfig`, and
+`idf.py -p PORT flash monitor`; these commands are environment-limited here. Its README defines
+scenario selection, capture/check commands, metadata, repetition threshold, and pass criteria.
 
 ## Code-documentation policy
 

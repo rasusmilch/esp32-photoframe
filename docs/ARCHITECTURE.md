@@ -32,6 +32,17 @@ state. Deadlines remain default/configurable and saturating.
 
 **Core dependency rule:** connectivity may enable network features, but must not own or gate local slideshow, storage navigation, buttons, or retained valid displayed content.
 
+## Provisional physical-attempt fence
+
+Production integration remains blocked pending physical validation of
+`tools/wifi_epoch_fence_probe`. The proposed model assigns one immutable epoch/token/generation to
+the single Wi-Fi owner. Cancellation/timeout marks it stopping and calls `esp_wifi_stop()`; the
+slot remains held through application `WIFI_EVENT_STA_STOP`. That handler posts a custom fence to
+the back of the same default ESP event loop, and only owner-task dispatch of that fence may release
+the epoch. A later owner iteration may then start another epoch. Stop return, disconnect, delay,
+yield, or cancellation request is not a fence. Any attributable old Wi-Fi/IP event after the fence
+invalidates the proposal. This model is provisional, not a production guarantee.
+
 ## Open implementation design questions
 
 Later design must settle image-identity representation and retry ownership. The import persistence boundary is resolved without credential-format migration: existing NVS keys share one explicit commit and readback, with equality-based recovery rather than a secret-derived marker. The provisioning body ceiling is 758 bytes. These technical choices cannot weaken `docs/GOVERNANCE.md`.
