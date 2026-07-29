@@ -16,7 +16,7 @@ The portal is an operator provisioning channel, not a prerequisite for local sli
 
 Current source searches `/storage/config/wifi.txt` before `/storage/wifi.txt` on SD-capable boards. The file is positional: line 1 is a non-empty SSID (maximum 31 bytes), line 2 is a required password line that may be empty (maximum 63 bytes), and line 3 is an optional device name (maximum 63 bytes). LF and CRLF are accepted; spaces and a leading `#` are data. An absent or empty third line leaves the current device name unchanged. Up to four trailing empty CRLF lines fit the derived 169-byte ceiling; extra non-empty fields, malformed line endings, NUL, truncation, and overflow are rejected.
 
-Target consume-once sequence:
+Implemented and host-verified consume-once sequence (ESP-IDF adapter, physical NVS/SD, and hardware validation remain pending):
 
 1. Read the complete exact file into a fixed buffer and parse all fields without mutation.
 2. Load the active NVS profile; omitted device name inherits its current value.

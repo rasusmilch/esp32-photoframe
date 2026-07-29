@@ -4,6 +4,12 @@
 
 `main/main.c` orchestrates boot and wake paths. `storage.c`, `album_manager.c`, and `display_manager.c` manage backends, albums, and display/rotation. `wifi_manager.c` and `wifi_provisioning.c` manage station connectivity and captive provisioning. `provisioning_form.c` is a pure C boundary that strictly parses bounded pointer-and-length form bodies and provides a callback-driven exact reader; the HTTP adapter validates the complete candidate and IPv4 values before configuration or Wi-Fi side effects. `wifi_import.c` is the pure positional `wifi.txt` parser, source-precedence selector, and transaction coordinator. `storage.c` owns bounded exact-path filesystem reads, while `wifi_import_runtime.c` adapts one NVS open/set/commit boundary, read-only verification, cache publication, and exact-path deletion. `power_manager.c` owns schedules, active/deep sleep, and wake dispatch. Board hardware is implemented under `components/board_hal`; Home Assistant, OTA, HTTP/mDNS, and periodic tasks are separate modules. Current cold boot still gates normal startup on provisioning/Wi-Fi and navigation lacks previous; these are known gaps, not target architecture.
 
+`connectivity_policy.c` is a current pure decision boundary, but is not yet consumed by runtime. It
+classifies normal storage/URL startup, credential state, local-service eligibility, asynchronous
+connection/provisioning eligibility, retained-display preservation, and credential-store holds.
+Its retry state reserves one attempt, schedules failures with a default or configured interval,
+saturates deadlines, and rejects results from obsolete credential generations.
+
 ## Required target boundaries
 
 - **Boot coordinator:** decides cold-boot/wake behavior and initializes local-capable services before optional networking.
@@ -13,7 +19,7 @@
   imported device name is cached before the Wi-Fi manager derives its DHCP hostname.
 - **Local slideshow domain:** owns deterministic inventory, current identity, refresh, previous/next, and persistence after display success.
 - **Credential-import transaction:** current implementation discovers the config path before root, parses and stages without side effects, preserves the current device name when omitted, commits SSID/password/name together, reopens and verifies, publishes caches, then deletes the exact source. Complete, absent, incomplete (exactly one credential key), and operational-error profiles are distinct. A valid candidate repairs an incomplete pair through the same commit; equality with a complete verified profile provides idempotent deletion-only recovery after deletion failure.
-- **Connectivity coordinator:** owns non-blocking state, serialized retries, and safe online/offline notifications without destructive side effects.
+- **Connectivity coordinator:** will adapt the existing pure boot/retry policy to non-blocking runtime state, serialized retries, and safe online/offline notifications without destructive side effects. Runtime integration remains pending.
 - **Provisioning service:** receives a complete bounded body, strictly decodes and validates candidates, then activates atomically.
 - **Semantic button service:** consumes HAL physical descriptors and implements debounce/duration state, emitting Wi-Fi-independent logical events.
 - **Power/wake service:** owns active rotation, timer/button deep-sleep wake, early-wake correction, and board preparation.

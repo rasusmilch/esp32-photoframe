@@ -16,6 +16,14 @@ Current host CMake tests cover cron and wake scheduling, while `make test` also 
 
 `make test-wifi-import` is also self-contained and runs before dependency-fetching tests. It covers LF/CRLF positional parsing, empty passwords and optional names, exact/overflow capacities and the 169-byte file ceiling, embedded/structural/excess input, both-path discovery and precedence, source failures, first/replacement/already-applied imports, optional-name preservation, both incomplete credential-pair forms and repair, pre-commit load failure versus post-commit verification failure, simulated commit/readback failures and mismatches, exact-path deletion, deletion-failure recovery without a repeated commit, call ordering, and cache publication only after verification.
 
+`make test-connectivity-policy` is dependency-free and runs third, before downloaded test paths. Its
+boot matrix covers storage versus URL mode, persistent-storage capability, all credential states,
+retained-display preservation, asynchronous connection/provisioning eligibility, operational-error
+hold, and explicit fast-wake exclusion. Its retry matrix covers the 15-minute default, arbitrary
+nonzero intervals, initial/serialized attempts, failure deadlines, exact boundary polling, repeated
+failure, success, unavailable credentials, connected state, credential replacement, stale success
+and failure results, and saturating `uint64_t` time arithmetic. The policy is not runtime validation.
+
 ## Required scenarios
 
 - **Provisioning:** partial and one-byte reads; truncation; timeout; every field order; duplicate/missing/empty fields; malformed `%` escapes; encoded `&`, `=`, `%`, `+`, and spaces; decoded password lengths 63 valid/64 invalid; oversized body; no secret leakage.

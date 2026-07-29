@@ -115,6 +115,7 @@ These commands are derived from current local scripts/workflows:
 | Formatting | `make format-check` | CI-verified historically; not run here because it may invoke `npm ci` |
 | Provisioning boundary | `make test-provisioning-form` | verified locally; dependency-free C11 strict compile and tests |
 | Wi-Fi import transaction | `make test-wifi-import` | verified locally; dependency-free C11 transaction, incomplete-profile repair, and recovery tests |
+| Boot/connectivity policy | `make test-connectivity-policy` | verified locally; dependency-free C11 declarative boot and serialized retry tests; runtime integration pending |
 | Host/CLI tests | `make test` | CI-verified historically; environment-limited here (GoogleTest/dependency fetch and generated build directory) |
 | Direct host tests | `cmake -S host_tests -B host_tests/build && cmake --build host_tests/build && ctest --test-dir host_tests/build --output-on-failure` | documented target; environment-limited here |
 | CLI tests | `cd process-cli && npm test` | documented from package scripts; unknown locally |

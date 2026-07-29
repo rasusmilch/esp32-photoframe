@@ -24,3 +24,9 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   retained committed files recover by deletion without rewriting credentials or restarting.
 - Applied verified imported identity before Wi-Fi initialization in the same boot, and allowed a
   valid file to transactionally repair an incomplete stored SSID/password pair.
+
+### Internal
+
+- Added dependency-free normal-boot and serialized retry policies, including 15-minute default
+  scheduling, saturating deadlines, and stale credential-generation protection. Runtime
+  connectivity behavior is unchanged pending integration.
