@@ -47,8 +47,13 @@ static wifi_import_profile_result_t load_profile(void *context, wifi_import_prof
     } else if (name_error != ESP_OK) {
         return WIFI_IMPORT_PROFILE_ERROR;
     }
-    if (ssid_error == ESP_ERR_NVS_NOT_FOUND && password_error == ESP_ERR_NVS_NOT_FOUND) {
+    bool ssid_absent = ssid_error == ESP_ERR_NVS_NOT_FOUND;
+    bool password_absent = password_error == ESP_ERR_NVS_NOT_FOUND;
+    if (ssid_absent && password_absent) {
         return WIFI_IMPORT_PROFILE_NONE;
+    }
+    if ((ssid_absent && password_error == ESP_OK) || (password_absent && ssid_error == ESP_OK)) {
+        return WIFI_IMPORT_PROFILE_INCOMPLETE;
     }
     return ssid_error == ESP_OK && password_error == ESP_OK ? WIFI_IMPORT_PROFILE_OK
                                                             : WIFI_IMPORT_PROFILE_ERROR;

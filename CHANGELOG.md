@@ -22,3 +22,5 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
 
 - Made `wifi.txt` consume-once: exact-source deletion occurs only after readback verification,
   retained committed files recover by deletion without rewriting credentials or restarting.
+- Applied verified imported identity before Wi-Fi initialization in the same boot, and allowed a
+  valid file to transactionally repair an incomplete stored SSID/password pair.

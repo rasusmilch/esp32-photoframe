@@ -177,7 +177,7 @@ wifi_import_outcome_t wifi_import_run(const wifi_import_ports_t *ports)
     wifi_import_profile_t current = {0};
     wifi_import_profile_result_t current_result = ports->load_profile(ports->context, &current);
     if (current_result == WIFI_IMPORT_PROFILE_ERROR) {
-        return WIFI_IMPORT_OUTCOME_VERIFICATION_FAILED;
+        return WIFI_IMPORT_OUTCOME_PROFILE_LOAD_FAILED;
     }
 
     wifi_import_profile_t desired = current;

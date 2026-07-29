@@ -25,7 +25,7 @@ Target consume-once sequence:
 5. Delete only the selected source path after verification. No connection test or import restart occurs.
 6. If deletion fails, the retained file compares equal on the next boot and is deletion-only recovery: credentials are not rewritten and no restart is requested.
 
-Malformed, incomplete, unreadable, oversized, uncommitted, or unverifiable candidates retain the file and are never deleted by the coordinator. Pre-commit failures preserve the prior profile. A valid file is checked before captive-provisioning state even when credentials already exist, so it can explicitly replace them; failure leaves existing credentials available to the current boot.
+Malformed, incomplete, unreadable, oversized, uncommitted, or unverifiable candidates retain the file and are never deleted by the coordinator. Pre-commit failures preserve the prior profile. A valid file is checked before Wi-Fi/provisioning initialization even when credentials already exist, so it can explicitly replace them and its verified device identity is active for same-boot hostname setup. If only one stored SSID/password key exists, a valid file repairs the incomplete pair through the normal single commit/readback flow; without a valid source the partial state is left untouched for provisioning recovery.
 
 ## Unavailable or changed access point
 

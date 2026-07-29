@@ -330,11 +330,83 @@ static void test_transactions(void)
     CHECK(strcmp(fake.deleted_path, WIFI_IMPORT_ROOT_PATH) == 0);
 }
 
+static void test_incomplete_profiles(void)
+{
+    for (int missing = 1; missing <= 2; missing++) {
+        fake_t fake = base_fake();
+        fake.load_results[0] = WIFI_IMPORT_PROFILE_INCOMPLETE;
+        strcpy(fake.stored.device_name, "Keep Me");
+        if (missing == 1) {
+            strcpy(fake.stored.password, "partial");
+        } else {
+            strcpy(fake.stored.ssid, "partial");
+        }
+        CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_COMMITTED_DELETED);
+        CHECK(fake.commit_calls == 1 && fake.load_calls == 2 && fake.apply_calls == 1 &&
+              fake.delete_calls == 1);
+        CHECK(fake.events[fake.event_count - 2] == EVENT_APPLY &&
+              fake.events[fake.event_count - 1] == EVENT_DELETE);
+        CHECK(strcmp(fake.stored.device_name, "New Name") == 0);
+    }
+
+    fake_t fake = base_fake();
+    fake.config_data = "new\nsecret";
+    fake.load_results[0] = WIFI_IMPORT_PROFILE_INCOMPLETE;
+    strcpy(fake.stored.ssid, "partial");
+    strcpy(fake.stored.device_name, "Keep Me");
+    CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_COMMITTED_DELETED);
+    CHECK(strcmp(fake.stored.device_name, "Keep Me") == 0);
+
+    fake = base_fake();
+    fake.load_results[0] = WIFI_IMPORT_PROFILE_INCOMPLETE;
+    strcpy(fake.stored.ssid, "new");
+    strcpy(fake.stored.password, "secret");
+    strcpy(fake.stored.device_name, "New Name");
+    CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_COMMITTED_DELETED);
+    CHECK(fake.commit_calls == 1); /* Incomplete is never treated as already applied. */
+
+    fake = base_fake();
+    fake.load_results[0] = WIFI_IMPORT_PROFILE_INCOMPLETE;
+    fake.delete_ok = false;
+    CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_COMMITTED_DELETE_FAILED);
+    CHECK(fake.commit_calls == 1);
+    fake.load_results[0] = WIFI_IMPORT_PROFILE_OK;
+    fake.load_calls = fake.commit_calls = fake.delete_calls = fake.apply_calls = fake.event_count =
+        0;
+    CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_ALREADY_APPLIED_DELETE_FAILED);
+    CHECK(fake.commit_calls == 0);
+
+    fake = base_fake();
+    fake.config_data = "invalid";
+    fake.load_results[0] = WIFI_IMPORT_PROFILE_INCOMPLETE;
+    CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_INVALID_SOURCE);
+    CHECK(fake.load_calls == 0 && fake.commit_calls == 0 && fake.apply_calls == 0 &&
+          fake.delete_calls == 0);
+
+    fake = base_fake();
+    fake.config_result = WIFI_IMPORT_SOURCE_NOT_FOUND;
+    fake.root_result = WIFI_IMPORT_SOURCE_NOT_FOUND;
+    fake.load_results[0] = WIFI_IMPORT_PROFILE_INCOMPLETE;
+    CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_NO_SOURCE);
+    CHECK(fake.load_calls == 0 && fake.commit_calls == 0 && fake.delete_calls == 0);
+
+    fake = base_fake();
+    fake.load_results[0] = WIFI_IMPORT_PROFILE_ERROR;
+    CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_PROFILE_LOAD_FAILED);
+    CHECK(fake.commit_calls == 0 && fake.apply_calls == 0 && fake.delete_calls == 0);
+
+    fake = base_fake();
+    fake.load_results[1] = WIFI_IMPORT_PROFILE_ERROR;
+    CHECK(run(&fake) == WIFI_IMPORT_OUTCOME_VERIFICATION_FAILED);
+    CHECK(fake.commit_calls == 1 && fake.apply_calls == 0 && fake.delete_calls == 0);
+}
+
 int main(void)
 {
     test_parser();
     test_discovery();
     test_transactions();
+    test_incomplete_profiles();
     if (failures != 0) {
         fprintf(stderr, "%d wifi-import test(s) failed\n", failures);
         return EXIT_FAILURE;

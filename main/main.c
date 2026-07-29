@@ -596,12 +596,14 @@ void app_main(void)
         break;
     }
 
+    // Normal-path initialization order is intentional:
+    // 1. board/storage, 2. NVS/config cache, 3. transactional import,
+    // 4. WiFi/provisioning, 5. provisioning decision and connection lifecycle.
+    // Specialized clear/timer/rotate wake paths above sleep before reaching this import.
+    wifi_import_process();
+
     ESP_ERROR_CHECK(wifi_manager_init());
     ESP_ERROR_CHECK(wifi_provisioning_init());
-
-    // Import is checked on every normal startup, including credential replacement. It performs
-    // no connection test or restart; malformed/failed input leaves the committed profile intact.
-    wifi_import_process();
 
     if (!wifi_provisioning_is_provisioned()) {
         ESP_LOGI(TAG, "===========================================");

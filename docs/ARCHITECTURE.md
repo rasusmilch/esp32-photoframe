@@ -7,8 +7,12 @@
 ## Required target boundaries
 
 - **Boot coordinator:** decides cold-boot/wake behavior and initializes local-capable services before optional networking.
+- **Normal initialization order:** board/storage, NVS and configuration cache, transactional
+  `wifi.txt` import, Wi-Fi/provisioning initialization, then provisioning and connection decisions.
+  Clear/timer/rotate fast-wake paths dispatch before the normal import. This ensures a verified
+  imported device name is cached before the Wi-Fi manager derives its DHCP hostname.
 - **Local slideshow domain:** owns deterministic inventory, current identity, refresh, previous/next, and persistence after display success.
-- **Credential-import transaction:** current implementation discovers the config path before root, parses and stages without side effects, preserves the current device name when omitted, commits SSID/password/name together, reopens and verifies, publishes caches, then deletes the exact source. Equality with verified active values provides idempotent deletion-only recovery after deletion failure.
+- **Credential-import transaction:** current implementation discovers the config path before root, parses and stages without side effects, preserves the current device name when omitted, commits SSID/password/name together, reopens and verifies, publishes caches, then deletes the exact source. Complete, absent, incomplete (exactly one credential key), and operational-error profiles are distinct. A valid candidate repairs an incomplete pair through the same commit; equality with a complete verified profile provides idempotent deletion-only recovery after deletion failure.
 - **Connectivity coordinator:** owns non-blocking state, serialized retries, and safe online/offline notifications without destructive side effects.
 - **Provisioning service:** receives a complete bounded body, strictly decodes and validates candidates, then activates atomically.
 - **Semantic button service:** consumes HAL physical descriptors and implements debounce/duration state, emitting Wi-Fi-independent logical events.
