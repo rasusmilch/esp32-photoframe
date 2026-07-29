@@ -21,8 +21,11 @@ boot matrix covers storage versus URL mode, persistent-storage capability, all c
 retained-display preservation, asynchronous connection/provisioning eligibility, operational-error
 hold, and explicit fast-wake exclusion. Its retry matrix covers the 15-minute default, arbitrary
 nonzero intervals, initial/serialized attempts, failure deadlines, exact boundary polling, repeated
-failure, success, unavailable credentials, connected state, credential replacement, stale success
-and failure results, and saturating `uint64_t` time arithmetic. The policy is not runtime validation.
+failure, success, unavailable credentials, and saturating `uint64_t` arithmetic. Race sequences
+cover repeated replacement during an outstanding attempt, obsolete success/failure before and
+after polling, immutable/unknown/duplicate tokens, cancellation request versus acknowledgement,
+generation-qualified connection/disconnection, stale disconnects, retry-deadline preservation,
+and proof that no poll reserves a second physical slot. The policy is not runtime validation.
 
 ## Required scenarios
 

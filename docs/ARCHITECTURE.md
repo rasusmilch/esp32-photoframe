@@ -7,8 +7,12 @@
 `connectivity_policy.c` is a current pure decision boundary, but is not yet consumed by runtime. It
 classifies normal storage/URL startup, credential state, local-service eligibility, asynchronous
 connection/provisioning eligibility, retained-display preservation, and credential-store holds.
-Its retry state reserves one attempt, schedules failures with a default or configured interval,
-saturates deadlines, and rejects results from obsolete credential generations.
+Its retry state separately records desired generation, immutable outstanding-attempt token,
+connected generation, and retry generation/deadline. Credential replacement preserves an
+outstanding physical slot; only matching completion or acknowledged cancellation releases it, and
+only a later poll can reserve the newest generation. Connection/disconnection observations are
+generation-qualified. Obsolete/unknown/duplicate events cannot alter desired connection or retry
+state. Deadlines remain default/configurable and saturating.
 
 ## Required target boundaries
 

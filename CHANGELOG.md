@@ -27,6 +27,7 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
 
 ### Internal
 
-- Added dependency-free normal-boot and serialized retry policies, including 15-minute default
-  scheduling, saturating deadlines, and stale credential-generation protection. Runtime
-  connectivity behavior is unchanged pending integration.
+- Added dependency-free normal-boot and generation-safe serialized retry policies, including a
+  15-minute default, saturating deadlines, immutable attempt tokens, qualified connection events,
+  and completion/cancellation ordering that prevents replacement overlap. Runtime connectivity
+  behavior is unchanged pending integration.

@@ -32,6 +32,7 @@ typedef struct {
 
 typedef enum {
     BOOT_POLICY_NORMAL = 0,
+    BOOT_POLICY_INVALID_INPUT,
     BOOT_POLICY_FAST_WAKE_OUTSIDE_SCOPE,
     BOOT_POLICY_CREDENTIAL_STORE_HOLD,
 } boot_policy_status_t;
@@ -75,10 +76,21 @@ boot_policy_result_t boot_policy_decide(const boot_policy_input_t *input);
 
 typedef struct {
     uint64_t credential_generation;
+    uint64_t attempt_id;
+} connectivity_attempt_token_t;
+
+typedef struct {
+    uint64_t desired_generation;
+    connectivity_credential_state_t desired_credentials;
+    uint64_t next_attempt_id;
+    connectivity_attempt_token_t outstanding_attempt;
+    uint64_t connected_generation;
+    uint64_t retry_generation;
     uint64_t retry_deadline_ms;
-    bool attempt_active;
-    bool retry_pending;
+    bool attempt_outstanding;
+    bool cancellation_requested;
     bool connected;
+    bool retry_pending;
 } connectivity_retry_state_t;
 
 typedef enum {
@@ -87,28 +99,50 @@ typedef enum {
     CONNECTIVITY_RETRY_CREDENTIALS_UNAVAILABLE,
     CONNECTIVITY_RETRY_SCHEDULED,
     CONNECTIVITY_RETRY_CONNECTED,
-    CONNECTIVITY_RETRY_STALE_RESULT,
+    CONNECTIVITY_RETRY_OBSOLETE_RESULT,
+    CONNECTIVITY_RETRY_UNKNOWN_ATTEMPT,
+    CONNECTIVITY_RETRY_NO_OUTSTANDING_ATTEMPT,
+    CONNECTIVITY_RETRY_CANCELLATION_REQUESTED,
+    CONNECTIVITY_RETRY_CANCELLATION_ACKNOWLEDGED,
+    CONNECTIVITY_RETRY_STALE_EVENT,
+    CONNECTIVITY_RETRY_INVALID_INPUT,
+    CONNECTIVITY_RETRY_TOKEN_EXHAUSTED,
 } connectivity_retry_action_t;
 
-typedef struct {
-    connectivity_credential_state_t credentials;
-    uint64_t credential_generation;
-    uint64_t now_ms;
-    uint64_t configured_interval_ms; /* zero selects the 15-minute default */
-    bool connected;
-} connectivity_retry_input_t;
+void connectivity_retry_init(connectivity_retry_state_t *state, uint64_t credential_generation,
+                             connectivity_credential_state_t credentials);
 
-void connectivity_retry_init(connectivity_retry_state_t *state, uint64_t credential_generation);
+/*
+ * Records desired credentials without releasing any physically outstanding attempt.
+ * Callers must supply a new generation whenever credential content is replaced.
+ */
+connectivity_retry_action_t connectivity_retry_update_credentials(
+    connectivity_retry_state_t *state, uint64_t credential_generation,
+    connectivity_credential_state_t credentials);
 
-/* Polls eligibility and reserves at most one attempt by setting attempt_active. */
+/* Reserves one immutable token only when no attempt is physically outstanding. */
 connectivity_retry_action_t connectivity_retry_poll(connectivity_retry_state_t *state,
-                                                    const connectivity_retry_input_t *input);
+                                                    uint64_t now_ms,
+                                                    connectivity_attempt_token_t *token);
 
-/* Applies a result only when its generation matches the reserved active attempt. */
+/* Applies a result only when the token exactly identifies the outstanding attempt. */
 connectivity_retry_action_t connectivity_retry_complete(connectivity_retry_state_t *state,
-                                                        uint64_t attempt_generation, bool success,
-                                                        uint64_t now_ms,
+                                                        connectivity_attempt_token_t token,
+                                                        bool success, uint64_t now_ms,
                                                         uint64_t configured_interval_ms);
+
+/* Cancellation request does not release the physical slot; acknowledgement does. */
+connectivity_retry_action_t connectivity_retry_request_cancellation(
+    connectivity_retry_state_t *state, connectivity_attempt_token_t token);
+connectivity_retry_action_t connectivity_retry_acknowledge_cancellation(
+    connectivity_retry_state_t *state, connectivity_attempt_token_t token);
+
+/* External connection events are generation-qualified. */
+connectivity_retry_action_t connectivity_retry_observe_connected(connectivity_retry_state_t *state,
+                                                                 uint64_t credential_generation);
+connectivity_retry_action_t connectivity_retry_observe_disconnected(
+    connectivity_retry_state_t *state, uint64_t credential_generation, uint64_t now_ms,
+    uint64_t configured_interval_ms);
 
 uint64_t connectivity_retry_effective_interval(uint64_t configured_interval_ms);
 
