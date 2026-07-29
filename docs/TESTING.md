@@ -32,8 +32,7 @@ Fixtures cover pre-fence start, owner overlap, post-fence events, wrong-generati
 pre-fence cancellation/retry, callback reconnect, unattributed events, reused epoch/attempt IDs,
 secret fields, premature release, and fence-before-STA_STOP. The separately buildable probe covers
 failure/retry, replacement, rapid replacement, APSTA failure/success, timeout, and API replacement.
-Its E1002/E1004 repeated physical matrix remains pending; checker success does not validate ESP-IDF
-ordering or the proposed fence.
+Fixtures additionally cover truncated active/stopped/fenced epochs, missing/duplicate/premature completion, evidence-loss faults, exact fence-context mismatches, symbolic-event mismatches, repeated stop, rapid-replacement errors, explicit APSTA configuration, and records after completion. Every pass fixture terminates with `run_complete` and is also tested after deliberate truncation. Its E1002/E1004 repeated physical matrix remains pending; checker success does not validate ESP-IDF ordering or the proposed fence.
 
 ## Required scenarios
 

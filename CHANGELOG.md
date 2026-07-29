@@ -34,3 +34,4 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
 - Added a standalone ESP-IDF Wi-Fi epoch-fence probe and standard-library trace checker with
   synthetic invariant fixtures. This is validation tooling only; the proposed barrier is not yet
   approved and production runtime behavior is unchanged.
+- Hardened epoch-fence validation tooling with synchronized immutable event snapshots, explicit evidence-loss faults, symbolic events, terminal run proof, and strict truncated-trace rejection; no production behavior changed.

@@ -40,8 +40,7 @@ the single Wi-Fi owner. Cancellation/timeout marks it stopping and calls `esp_wi
 slot remains held through application `WIFI_EVENT_STA_STOP`. That handler posts a custom fence to
 the back of the same default ESP event loop, and only owner-task dispatch of that fence may release
 the epoch. A later owner iteration may then start another epoch. Stop return, disconnect, delay,
-yield, or cancellation request is not a fence. Any attributable old Wi-Fi/IP event after the fence
-invalidates the proposal. This model is provisional, not a production guarantee.
+yield, or cancellation request is not a fence. Any attributable old Wi-Fi/IP event after the fence invalidates the proposal. Validation evidence requires synchronized immutable snapshots for STA-stop and its copied fence payload, explicit fault records for evidence loss, and a complete stop/fence/release sequence followed by `run_complete`; truncated captures fail. This model is provisional, not a production guarantee.
 
 ## Open implementation design questions
 

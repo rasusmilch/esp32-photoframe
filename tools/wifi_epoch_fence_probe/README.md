@@ -1,39 +1,30 @@
 # Wi-Fi epoch-fence probe
 
-This standalone ESP-IDF application tests a **provisional** physical-attempt barrier. It is not
-linked into production firmware and does not establish that the barrier is safe until the physical
-matrix below passes. Trace records never contain credentials.
+This standalone ESP-IDF application tests a **provisional** physical-attempt barrier. It is not linked into production firmware and cannot establish safety until the physical matrix passes. Traces never contain credentials.
 
-## Model and trace
+## Ownership, synchronization, and fence
 
-One owner task exclusively changes mode/configuration and starts, connects, stops, replaces, or
-tests STA. Event callbacks only snapshot the immutable active `{epoch, attempt_id, generation,
-owner}` context and enqueue bounded records. Stop marks that context stopping, calls
-`esp_wifi_stop()`, waits for application `WIFI_EVENT_STA_STOP`, posts `PROBE_FENCE_EVENT` to the
-back of the default loop, and retains the slot until the owner receives the custom event. A later
-owner iteration alone may start another epoch. A failed fence post holds the slot.
+One owner task exclusively writes the active context and calls Wi-Fi mode, configuration, start, connect, and stop APIs. Wi-Fi, IP, and fence callbacks take an internally consistent snapshot under the same short `portMUX_TYPE` critical section used by owner writes; no lock covers a driver call, event post, queue send, or trace print, and 64-bit access is never assumed atomic.
 
-Lines beginning `EPOCH_TRACE ` contain JSON with: run, monotonic sequence/time, source, raw base
-and ID, stable event name, epoch, attempt ID, credential generation, owner (`coordinator`, `portal`,
-or `none`), adapter state, Wi-Fi mode, raw disconnect reason, action, and result. Other monitor
-lines are ignored by the checker.
+On stop, the owner marks the immutable epoch/attempt/generation/owner context stopping and calls `esp_wifi_stop()` once. The application STA-stop handler enqueues its synchronized snapshot and posts a copied payload of that exact snapshot to the back of the default event loop. The fence handler enqueues that payload. Only the owner may compare it with the still-stopping context, trace the fence, and release the slot; only a later owner iteration may start another epoch. A stop return, disconnect, delay, yield, or cancellation request is not a fence.
 
-Selectable `CONFIG_PROBE_SCENARIO` values are: 1 failed connection/retry; 2 replacement; 3 rapid
-A→B→C replacement; 4 captive APSTA failure/restart; 5 captive APSTA success and APSTA→STA mode
-observation; 6 timeout; 7 configuration-API replacement through the same owner. The probe never
-reconnects in a callback. Scenario 5 records response/persistence simulation markers before the
-mode change; it does not write production credentials.
+Queue overflow, fence-post failure, snapshot mismatch, driver failure, repeated stop, start overlap, and fence timeout latch a callback-safe probe fault. The owner emits the fault when it can run, does not release unsafe state, and cannot emit successful completion. Initialization failures before tracing is available remain an explicit limitation.
+
+## Trace and completion
+
+Each `EPOCH_TRACE ` JSON line includes run, monotonic sequence/time, source, raw base and numeric ID, symbolic event, epoch, attempt ID, generation, owner, adapter state, mode, disconnect reason, action, and safe result. Semantic names are `sta_start`, `sta_stop`, `sta_connected`, `sta_disconnected`, `got_ip`, `lost_ip`, `wifi_other`, `ip_other`, and `fence_dispatched`. Unknown IDs retain their raw ID. Other monitor lines are ignored.
+
+A successful run ends only after every epoch has STA-stop, matching fence, and release records, no fault or pending start exists, and exactly one `run_complete` is emitted. Scenario E first observes APSTA-to-STA behavior for the bounded owner timeout, then stops/fences/releases. A capture ending before `run_complete` fails.
+
+Scenarios are: 1 failed/timed-out attempt followed by one completed retry; 2 generation-2 replacement while generation 1 is active; 3 distinct A→B and B→C updates while A remains active, then only C starts; 4 explicitly configured AP+STA portal failure, response marker, fenced AP restart, and final fence; 5 explicitly configured AP+STA, real GOT_IP, persistence/response markers, STA-mode transition observation, and final fence; 6 one-shot timeout stop; 7 configuration-API replacement through the same owner. Callbacks never reconnect and no production credentials are persisted.
 
 ## Offline checker
 
-Run `make test-wifi-epoch-trace`, or check a capture directly:
+Run `make test-wifi-epoch-trace`, or:
 
     python3 tools/wifi_epoch_fence_probe/check_trace.py capture.log
 
-The checker rejects pre-fence new epochs, simultaneous/portal-coordinator ownership, post-fence
-old Wi-Fi/IP events, wrong-generation GOT_IP, pre-fence cancellation acknowledgement/retry,
-callback reconnect, unattributed driver events, reused epochs/attempt IDs, premature release/fence,
-and secret fields. It supports multiple run IDs and unrelated log lines.
+The checker enforces increasing sequence/nondecreasing time, unique IDs, one owner, exact STA-stop/fence/release ordering and context, symbolic event semantics, no post-fence driver event, no hidden reconnect, no evidence-loss fault, and terminal completion. Synthetic tests require every named negative fixture to fail for its intended reason and deliberately truncate every passing fixture.
 
 ## Later ESP-IDF execution (pending, not run here)
 
