@@ -9,4 +9,8 @@ config PROBE_SCENARIO
     int "Scenario (1=A fail/retry, 2=B replace, 3=C rapid, 4=D APSTA fail, 5=E APSTA success, 6=F timeout, 7=G API replace)"
     range 1 7
     default 1
+config PROBE_POST_FENCE_OBSERVE_MS
+    int "Post-fence quiet observation interval (milliseconds)"
+    range 100 60000
+    default 2000
 endmenu

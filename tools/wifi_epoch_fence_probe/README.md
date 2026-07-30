@@ -12,11 +12,11 @@ Queue overflow, fence-post failure, snapshot mismatch, driver failure, repeated 
 
 ## Trace and completion
 
-Each `EPOCH_TRACE ` JSON line includes run, monotonic sequence/time, source, raw base and numeric ID, symbolic event, epoch, attempt ID, generation, owner, adapter state, mode, disconnect reason, action, and safe result. Semantic names are `sta_start`, `sta_stop`, `sta_connected`, `sta_disconnected`, `got_ip`, `lost_ip`, `wifi_other`, `ip_other`, and `fence_dispatched`. Unknown IDs retain their raw ID. Other monitor lines are ignored.
+Each `EPOCH_TRACE ` JSON line includes run, selected scenario A–G, explicit scenario phase, selected `post_fence_observe_ms`, monotonic sequence/time, source, raw base and numeric ID, symbolic event, epoch, attempt ID, generation, owner, adapter state, requested mode, disconnect reason, action, and safe result. Semantic names are `sta_start`, `sta_stop`, `sta_connected`, `sta_disconnected`, `got_ip`, `lost_ip`, `wifi_other`, `ip_other`, and `fence_dispatched`. Unknown IDs retain their raw ID. Other monitor lines are ignored.
 
-A successful run ends only after every epoch has STA-stop, matching fence, and release records, no fault or pending start exists, and exactly one `run_complete` is emitted. Scenario E first observes APSTA-to-STA behavior for the bounded owner timeout, then stops/fences/releases. A capture ending before `run_complete` fails.
+A matching fence begins a validation-only quiet quarantine; it does not release the context. The old context remains attributable for `CONFIG_PROBE_POST_FENCE_OBSERVE_MS` (default 2000 ms, configurable from 100–60000 ms). Any Wi-Fi/IP event during that interval is a failure. Only a quiet interval produces `post_fence_observation_complete`, after which the owner rechecks faults, releases, and schedules any next epoch on a later iteration. This delay collects evidence and is not part of the proposed production barrier. A successful run ends only after its scenario-specific milestones and every epoch’s stop/fence/quarantine/release sequence, with exactly one `run_complete`.
 
-Scenarios are: 1 failed/timed-out attempt followed by one completed retry; 2 generation-2 replacement while generation 1 is active; 3 distinct A→B and B→C updates while A remains active, then only C starts; 4 explicitly configured AP+STA portal failure, response marker, fenced AP restart, and final fence; 5 explicitly configured AP+STA, real GOT_IP, persistence/response markers, STA-mode transition observation, and final fence; 6 one-shot timeout stop; 7 configuration-API replacement through the same owner. Callbacks never reconnect and no production credentials are persisted.
+Scenario state machines are explicit: A requires a failed/timed-out first attempt and exactly one completed retry; B requires a generation-2 update before generation 1 releases; C requires ordered generation-2 and generation-3 updates but starts only generation 3; D requires a failed APSTA candidate, response marker, then a separately configured and observed AP-only epoch; E requires real GOT_IP, persistence and response markers, successful STA-mode request, stable observation without disconnect, then stop; F requires the configured timeout before its one stop; G requires configuration-API submission and generation replacement through the same owner. Every epoch records requested mode, AP/STA configuration as applicable, outcome, stop, stop event, fence, quarantine completion, and release. Callbacks never reconnect and no production credentials are persisted.
 
 ## Offline checker
 
@@ -24,7 +24,7 @@ Run `make test-wifi-epoch-trace`, or:
 
     python3 tools/wifi_epoch_fence_probe/check_trace.py capture.log
 
-The checker enforces increasing sequence/nondecreasing time, unique IDs, one owner, exact STA-stop/fence/release ordering and context, symbolic event semantics, no post-fence driver event, no hidden reconnect, no evidence-loss fault, and terminal completion. Synthetic tests require every named negative fixture to fail for its intended reason and deliberately truncate every passing fixture.
+The checker enforces stable scenario identity, scenario-specific milestones and phase completion, increasing sequence/nondecreasing time, unique IDs, one owner, per-epoch AP/STA configuration, exact stop/fence/quarantine/release ordering and context, symbolic event semantics, no post-fence driver event, no hidden reconnect, no evidence-loss fault, and terminal completion. Synthetic tests require every named negative fixture to fail for its intended reason and deliberately truncate every passing fixture.
 
 ## Later ESP-IDF execution (pending, not run here)
 

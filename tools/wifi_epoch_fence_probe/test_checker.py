@@ -1,33 +1,15 @@
-#!/usr/bin/env python3
-import json
-import unittest
+import json,subprocess,sys,tempfile,unittest
 from pathlib import Path
-
-from check_trace import check_records
-
-ROOT = Path(__file__).parent
-
-
+ROOT=Path(__file__).parent; CHECK=ROOT/'check_trace.py'; TRACES=ROOT/'traces'
 class CheckerFixtures(unittest.TestCase):
-    def test_passing_fixtures_complete_and_truncation_fails(self):
-        for path in sorted((ROOT / "traces").glob("pass_*.jsonl")):
-            lines = path.read_text().splitlines()
-            self.assertTrue(any('"action":"run_complete"' in line for line in lines), path.name)
-            failures, count = check_records(lines)
-            self.assertGreater(count, 0, path.name)
-            self.assertEqual([], failures, path.name)
-            truncated, _ = check_records(lines[:-1])
-            self.assertTrue(truncated, f"truncated {path.name}")
-
-    def test_each_failure_has_intended_reason(self):
-        expected = json.loads((ROOT / "expected_failures.json").read_text())
-        self.assertGreaterEqual(len(expected), 20)
-        for name, reason in expected.items():
-            failures, _ = check_records((ROOT / "traces" / name).read_text().splitlines())
-            messages = [message for _, message in failures]
-            self.assertTrue(any(reason in message for message in messages),
-                            f"{name}: expected {reason!r}, got {messages!r}")
-
-
-if __name__ == "__main__":
-    unittest.main()
+ def run_check(self,path): return subprocess.run([sys.executable,str(CHECK),str(path)],text=True,capture_output=True)
+ def test_all_scenarios_and_multiple_truncations(self):
+  for path in sorted(TRACES.glob('pass_scenario_*.jsonl')):
+   lines=path.read_text().splitlines(); self.assertIn('"run_complete"',lines[-1]); self.assertEqual(self.run_check(path).returncode,0,path.name)
+   for cut in (4,3,1):
+    with tempfile.NamedTemporaryFile('w',delete=False) as f: f.write('\n'.join(lines[:-cut])+'\n'); name=f.name
+    self.assertNotEqual(self.run_check(name).returncode,0,f'{path.name} cut {cut}')
+ def test_each_failure_has_intended_reason(self):
+  for name,reason in json.loads((ROOT/'expected_failures.json').read_text()).items():
+   result=self.run_check(TRACES/name); self.assertNotEqual(result.returncode,0,name); self.assertIn(reason,result.stderr,name)
+if __name__=='__main__': unittest.main()

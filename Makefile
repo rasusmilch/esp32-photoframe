@@ -120,4 +120,4 @@ test-connectivity-policy:
 test-wifi-epoch-trace:
 	@cd tools/wifi_epoch_fence_probe && python3 -m unittest -v test_checker.py
 	@python3 tools/wifi_epoch_fence_probe/check_trace.py \
-		tools/wifi_epoch_fence_probe/traces/pass_completed.jsonl
+		tools/wifi_epoch_fence_probe/traces/pass_scenario_a.jsonl
