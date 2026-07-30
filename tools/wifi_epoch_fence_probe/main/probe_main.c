@@ -27,6 +27,9 @@ typedef struct {
     owner_t owner;
     adapter_state_t state;
     wifi_mode_t mode;
+    uint8_t required_stop_mask;
+    uint8_t observed_stop_mask;
+    bool fence_posted;
 } physical_context_t;
 
 typedef struct {
@@ -52,6 +55,10 @@ static bool run_finished;
 static const char *scenario_phase = "initial";
 static bool first_epoch = true;
 static uint32_t scenario_milestones;
+static int64_t fence_timestamp_ms;
+static int64_t quarantine_deadline_ms;
+
+enum { STOP_MASK_STA = 1U << 0, STOP_MASK_AP = 1U << 1 };
 
 enum {
     MILESTONE_FAILURE = 1U << 0,
@@ -112,6 +119,13 @@ static uint32_t current_faults(void)
 static char scenario_name(void)
 {
     return (char) ('A' + CONFIG_PROBE_SCENARIO - 1);
+}
+
+static uint8_t required_stop_mask(wifi_mode_t mode)
+{
+    return mode == WIFI_MODE_STA  ? STOP_MASK_STA
+           : mode == WIFI_MODE_AP ? STOP_MASK_AP
+                                  : STOP_MASK_STA | STOP_MASK_AP;
 }
 
 static bool scenario_ready(void)
@@ -186,17 +200,43 @@ static void trace(const char *source, const char *base, int32_t id, const char *
         ",\"source\":\"%s\",\"base\":\"%s\",\"event_id\":%" PRIi32
         ",\"event\":\"%s\",\"epoch\":%" PRIu64 ",\"attempt_id\":%" PRIu64 ",\"generation\":%" PRIu64
         ",\"owner\":\"%s\",\"state\":%d,"
-        "\"mode\":%d,\"reason\":%u,\"action\":\"%s\",\"result\":\"%s\"}\n",
+        "\"mode\":%d,\"required_stop_mask\":%u,\"observed_stop_mask\":%u,"
+        "\"fence_ts_ms\":%" PRIi64 ",\"quarantine_deadline_ms\":%" PRIi64
+        ",\"reason\":%u,\"action\":\"%s\",\"result\":\"%s\"}\n",
         scenario_name(), scenario_phase, CONFIG_PROBE_POST_FENCE_OBSERVE_MS, ++trace_sequence,
         esp_timer_get_time() / 1000, source, base, id, event, context.epoch, context.attempt_id,
-        context.generation, owner_name(context.owner), context.state, context.mode, reason, action,
-        result);
+        context.generation, owner_name(context.owner), context.state, context.mode,
+        context.required_stop_mask, context.observed_stop_mask, fence_timestamp_ms,
+        quarantine_deadline_ms, reason, action, result);
 }
 
 static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *event_data)
 {
     (void) arg;
-    physical_context_t snapshot = active_snapshot();
+    physical_context_t snapshot;
+    bool post_fence = false;
+    bool stop_fault = false;
+    uint8_t stop_bit = id == WIFI_EVENT_STA_STOP ? STOP_MASK_STA : STOP_MASK_AP;
+    portENTER_CRITICAL(&active_mux);
+    snapshot = active;
+    if (base == WIFI_EVENT && (id == WIFI_EVENT_STA_STOP || id == WIFI_EVENT_AP_STOP) &&
+        snapshot.state == STATE_STOPPING) {
+        if ((snapshot.required_stop_mask & stop_bit) == 0 ||
+            (snapshot.observed_stop_mask & stop_bit) != 0) {
+            fault_bits |= FAULT_CONTEXT;
+            stop_fault = true;
+        } else {
+            active.observed_stop_mask |= stop_bit;
+            snapshot = active;
+            if (snapshot.observed_stop_mask == snapshot.required_stop_mask &&
+                !snapshot.fence_posted) {
+                active.fence_posted = true;
+                snapshot = active;
+                post_fence = true;
+            }
+        }
+    }
+    portEXIT_CRITICAL(&active_mux);
     probe_event_t item = {.base = base, .id = id, .context = snapshot};
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED && event_data != NULL) {
         item.reason = ((wifi_event_sta_disconnected_t *) event_data)->reason;
@@ -207,7 +247,9 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *ev
                         : FAULT_EVENT_QUEUE);
         return;
     }
-    if (base == WIFI_EVENT && (id == WIFI_EVENT_STA_STOP || id == WIFI_EVENT_AP_STOP)) {
+    if (stop_fault)
+        return;
+    if (post_fence) {
         esp_err_t result = esp_event_post(PROBE_FENCE_EVENT, PROBE_FENCE_DISPATCHED, &snapshot,
                                           sizeof(snapshot), 0);
         probe_event_t post = {.base = PROBE_FENCE_EVENT,
@@ -253,7 +295,8 @@ static esp_err_t start_epoch(owner_t owner, uint64_t generation, wifi_mode_t mod
                                     .generation = generation,
                                     .owner = owner,
                                     .state = STATE_ACTIVE,
-                                    .mode = mode};
+                                    .mode = mode,
+                                    .required_stop_mask = required_stop_mask(mode)};
     active_store(current);
     epochs_started++;
     scenario_phase = first_epoch ? "first_attempt" : "second_attempt";
@@ -311,6 +354,8 @@ static void request_stop(const char *cause)
         return;
     }
     current.state = STATE_STOPPING;
+    current.observed_stop_mask = 0;
+    current.fence_posted = false;
     active_store(current);
     esp_err_t result = esp_wifi_stop();
     trace("owner", "PROBE", 0, cause, current, 0, "stop_requested",
@@ -358,15 +403,23 @@ static void owner_task(void *arg)
             fault_reported = true;
         }
         physical_context_t before_wait = active_snapshot();
-        TickType_t wait = before_wait.state == STATE_FENCED
-                              ? pdMS_TO_TICKS(CONFIG_PROBE_POST_FENCE_OBSERVE_MS)
-                              : pdMS_TO_TICKS(15000);
+        TickType_t wait = pdMS_TO_TICKS(15000);
+        if (before_wait.state == STATE_FENCED) {
+            int64_t now_ms = esp_timer_get_time() / 1000;
+            int64_t remaining =
+                quarantine_deadline_ms > now_ms ? quarantine_deadline_ms - now_ms : 0;
+            uint64_t ticks = ((uint64_t) remaining + portTICK_PERIOD_MS - 1U) / portTICK_PERIOD_MS;
+            wait = ticks > portMAX_DELAY ? portMAX_DELAY : (TickType_t) ticks;
+        }
         if (xQueueReceive(event_queue, &event, wait) != pdTRUE) {
             physical_context_t snapshot = active_snapshot();
             faults = current_faults();
             if (faults != 0 || run_finished)
                 continue;
             if (snapshot.state == STATE_FENCED) {
+                int64_t now_ms = esp_timer_get_time() / 1000;
+                if (now_ms < quarantine_deadline_ms)
+                    continue;
                 scenario_phase = "post_fence_complete";
                 trace("owner", "PROBE", 0, "post_fence_observation_complete", snapshot, 0,
                       "post_fence_observation_complete", "ok");
@@ -448,6 +501,12 @@ static void owner_task(void *arg)
             }
             continue;
         }
+        if (event.fence) {
+            scenario_phase = "post_fence_observation";
+            fence_timestamp_ms = esp_timer_get_time() / 1000;
+            if (fence_timestamp_ms <= INT64_MAX - CONFIG_PROBE_POST_FENCE_OBSERVE_MS)
+                quarantine_deadline_ms = fence_timestamp_ms + CONFIG_PROBE_POST_FENCE_OBSERVE_MS;
+        }
         trace("owner", base, event.id,
               event.fence ? "fence_dispatched" : event_name(event.base, event.id), event.context,
               event.reason, event.fence ? "fence_observed" : "event_observed", "ok");
@@ -465,9 +524,18 @@ static void owner_task(void *arg)
                 latch_fault(FAULT_CONTEXT);
                 continue;
             }
+            if (current.observed_stop_mask != current.required_stop_mask || !current.fence_posted) {
+                trace("owner", "PROBE_FENCE_EVENT", event.id, "incomplete_stop_mask", event.context,
+                      0, "probe_fault", "failed");
+                latch_fault(FAULT_CONTEXT);
+                continue;
+            }
             current.state = STATE_FENCED;
             active_store(current);
-            scenario_phase = "post_fence_observation";
+            if (fence_timestamp_ms > INT64_MAX - CONFIG_PROBE_POST_FENCE_OBSERVE_MS) {
+                latch_fault(FAULT_CONTEXT);
+                continue;
+            }
             observation_started = false;
         } else if (!event.fence && event.base == IP_EVENT && event.id == IP_EVENT_STA_GOT_IP &&
                    CONFIG_PROBE_SCENARIO == 5) {
@@ -478,12 +546,17 @@ static void owner_task(void *arg)
             trace("owner", "PROBE", 0, "http_response_complete", current, 0, "response_complete",
                   "ok");
             esp_err_t result = esp_wifi_set_mode(WIFI_MODE_STA);
+            if (result == ESP_OK) {
+                current.required_stop_mask = STOP_MASK_STA;
+                active_store(current);
+            }
             trace("owner", "PROBE", 0, "apsta_to_sta", current, 0, "set_mode_sta",
                   result == ESP_OK ? "ok" : "failed");
             if (result != ESP_OK)
                 latch_fault(FAULT_DRIVER);
-            else
+            else {
                 scenario_milestones |= MILESTONE_MODE_STA;
+            }
             observation_started = result == ESP_OK;
             scenario_phase = "sta_observation";
         } else if (!event.fence && event.base == IP_EVENT && event.id == IP_EVENT_STA_GOT_IP &&

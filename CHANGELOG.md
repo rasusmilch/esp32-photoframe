@@ -36,3 +36,4 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   approved and production runtime behavior is unchanged.
 - Hardened epoch-fence validation tooling with synchronized immutable event snapshots, explicit evidence-loss faults, symbolic events, terminal run proof, and strict truncated-trace rejection; no production behavior changed.
 - Added scenario-qualified epoch traces, explicit A–G completion state machines, per-epoch interface evidence, and a validation-only post-fence quiet quarantine with fresh-fault gates; production behavior remains unchanged.
+- Corrected epoch-fence validation tooling with mode-aware stop masks, exactly-one-fence gating, APSTA transition handling, absolute quarantine deadlines, timestamp verification, and ordered scenario phases; production firmware is unchanged.
