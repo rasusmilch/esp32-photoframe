@@ -1,4 +1,4 @@
-.PHONY: format format-check format-diff test help install-hooks
+.PHONY: format format-check format-diff test test-provisioning-form test-wifi-import test-connectivity-policy test-wifi-epoch-trace help install-hooks
 
 # Use clang-format-18 for consistency with CI
 # On macOS: brew install llvm@18 && brew link llvm@18
@@ -21,6 +21,10 @@ help:
 	@echo "  format-check  - Check if files need formatting (non-zero exit if changes needed)"
 	@echo "  format-diff   - Show what would change without modifying files"
 	@echo "  test          - Build and run unit tests (requires ESP-IDF environment)"
+	@echo "  test-provisioning-form - Run dependency-free provisioning boundary tests"
+	@echo "  test-wifi-import - Run dependency-free wifi.txt import tests"
+	@echo "  test-connectivity-policy - Run dependency-free boot/retry policy tests"
+	@echo "  test-wifi-epoch-trace - Run dependency-free WiFi epoch trace checker tests"
 	@echo "  install-hooks - Enable the git pre-commit formatting hook (.githooks)"
 
 install-hooks:
@@ -76,6 +80,10 @@ format-diff:
 	fi
 
 test:
+	@$(MAKE) test-provisioning-form
+	@$(MAKE) test-wifi-import
+	@$(MAKE) test-connectivity-policy
+	@$(MAKE) test-wifi-epoch-trace
 	@echo "Building and running host-based unit tests..."
 	@mkdir -p host_tests/build
 	@cd host_tests/build && cmake .. && make
@@ -87,3 +95,29 @@ test:
 	@cd process-cli && npm install --silent && npm run test:orientation
 	@echo ""
 	@echo "✓ All tests passed!"
+
+test-provisioning-form:
+	@mkdir -p host_tests/build
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -Imain \
+		main/provisioning_form.c host_tests/test_provisioning_form.c \
+		-o host_tests/build/provisioning_form_test
+	@./host_tests/build/provisioning_form_test
+
+test-wifi-import:
+	@mkdir -p host_tests/build
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -Imain \
+		main/wifi_import.c host_tests/test_wifi_import.c \
+		-o host_tests/build/wifi_import_test
+	@./host_tests/build/wifi_import_test
+
+test-connectivity-policy:
+	@mkdir -p host_tests/build
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -Imain \
+		main/connectivity_policy.c host_tests/test_connectivity_policy.c \
+		-o host_tests/build/connectivity_policy_test
+	@./host_tests/build/connectivity_policy_test
+
+test-wifi-epoch-trace:
+	@cd tools/wifi_epoch_fence_probe && python3 -m unittest -v test_checker.py
+	@python3 tools/wifi_epoch_fence_probe/check_trace.py \
+		tools/wifi_epoch_fence_probe/traces/pass_scenario_a.jsonl

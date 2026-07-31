@@ -1,10 +1,11 @@
 #include "storage.h"
 
+#include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "config.h"
-#include "config_manager.h"
 #include "esp_err.h"
 #include "esp_log.h"
 
@@ -168,68 +169,51 @@ esp_err_t storage_format(void)
     return ESP_OK;
 }
 
-esp_err_t storage_read_wifi_credentials(char *ssid, char *password)
+wifi_import_source_result_t storage_read_wifi_import_source(void *context, const char *path,
+                                                            char *destination, size_t capacity,
+                                                            size_t *length)
 {
+    (void) context;
 #ifdef CONFIG_HAS_SDCARD
     if (!sdcard_is_mounted()) {
-        return ESP_ERR_NOT_FOUND;
+        return WIFI_IMPORT_SOURCE_NOT_FOUND;
     }
-
-    // Try multiple possible locations, starting with the safest (config folder)
-    const char *paths[] = {FS_MOUNT_POINT "/config/wifi.txt", FS_MOUNT_POINT "/wifi.txt", NULL};
-
-    FILE *f = NULL;
-    for (int i = 0; paths[i] != NULL; i++) {
-        f = fopen(paths[i], "r");
-        if (f) {
-            ESP_LOGI(TAG, "Found WiFi credentials file at: %s", paths[i]);
-            break;
-        }
+    if (path == NULL || destination == NULL || length == NULL || capacity == 0U) {
+        return WIFI_IMPORT_SOURCE_READ_ERROR;
     }
-
+    struct stat info;
+    if (stat(path, &info) != 0) {
+        return errno == ENOENT ? WIFI_IMPORT_SOURCE_NOT_FOUND : WIFI_IMPORT_SOURCE_OPEN_ERROR;
+    }
+    if (info.st_size < 0 || (uint64_t) info.st_size > WIFI_IMPORT_MAX_FILE_LEN ||
+        (uint64_t) info.st_size >= capacity) {
+        return WIFI_IMPORT_SOURCE_TOO_LARGE;
+    }
+    FILE *f = fopen(path, "rb");
     if (!f) {
-        return ESP_ERR_NOT_FOUND;
+        return WIFI_IMPORT_SOURCE_OPEN_ERROR;
     }
-
-    char line[128];
-    int line_num = 0;
-
-    // Read file line by line
-    while (fgets(line, sizeof(line), f) != NULL && line_num < 3) {
-        // Remove trailing newline and carriage return
-        line[strcspn(line, "\r\n")] = 0;
-
-        // Skip empty lines and comments
-        if (strlen(line) == 0 || line[0] == '#') {
-            continue;
-        }
-
-        switch (line_num) {
-        case 0:  // SSID
-            strncpy(ssid, line, WIFI_SSID_MAX_LEN - 1);
-            ssid[WIFI_SSID_MAX_LEN - 1] = '\0';
-            break;
-        case 1:  // Password
-            strncpy(password, line, WIFI_PASS_MAX_LEN - 1);
-            password[WIFI_PASS_MAX_LEN - 1] = '\0';
-            break;
-        case 2:  // Device Name (Optional)
-            config_manager_set_device_name(line);
-            ESP_LOGI(TAG, "Loaded Device Name from SD: %s", line);
-            break;
-        }
-        line_num++;
+    size_t expected = (size_t) info.st_size;
+    size_t received = fread(destination, 1U, expected, f);
+    int trailing = received == expected ? fgetc(f) : EOF;
+    bool grew = trailing != EOF;
+    bool read_failed = received != expected || ferror(f) != 0;
+    bool close_failed = fclose(f) != 0;
+    bool failed = read_failed || close_failed;
+    if (failed) {
+        return WIFI_IMPORT_SOURCE_READ_ERROR;
     }
-    fclose(f);
-
-    if (line_num >= 2) {
-        ESP_LOGI(TAG, "Successfully read WiFi credentials from SD card");
-        return ESP_OK;
-    } else {
-        ESP_LOGE(TAG, "Invalid wifi.txt format on SD card");
-        return ESP_ERR_INVALID_ARG;
+    if (grew) {
+        return WIFI_IMPORT_SOURCE_TOO_LARGE;
     }
+    destination[received] = '\0';
+    *length = received;
+    return WIFI_IMPORT_SOURCE_OK;
 #else
-    return ESP_ERR_NOT_SUPPORTED;
+    (void) path;
+    (void) destination;
+    (void) capacity;
+    (void) length;
+    return WIFI_IMPORT_SOURCE_NOT_SUPPORTED;
 #endif
 }

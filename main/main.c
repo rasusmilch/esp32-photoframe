@@ -41,6 +41,7 @@
 #include "splash_screen.h"
 #include "storage.h"
 #include "utils.h"
+#include "wifi_import_runtime.h"
 #include "wifi_manager.h"
 #include "wifi_provisioning.h"
 
@@ -595,79 +596,58 @@ void app_main(void)
         break;
     }
 
+    // Normal-path initialization order is intentional:
+    // 1. board/storage, 2. NVS/config cache, 3. transactional import,
+    // 4. WiFi/provisioning, 5. provisioning decision and connection lifecycle.
+    // Specialized clear/timer/rotate wake paths above sleep before reaching this import.
+    wifi_import_process();
+
     ESP_ERROR_CHECK(wifi_manager_init());
     ESP_ERROR_CHECK(wifi_provisioning_init());
 
     if (!wifi_provisioning_is_provisioned()) {
-        bool creds_loaded = false;
+        ESP_LOGI(TAG, "===========================================");
+        ESP_LOGI(TAG, "No WiFi credentials found - Starting AP mode");
+        ESP_LOGI(TAG, "===========================================");
 
-        // Try to load WiFi credentials from storage
-        char sd_ssid[WIFI_SSID_MAX_LEN] = {0};
-        char sd_password[WIFI_PASS_MAX_LEN] = {0};
+        // Out-of-box setup: give the user more time to scan the QR code
+        // and provision via the app before the device auto-sleeps.
+        power_manager_set_auto_sleep_timeout(OOBE_AUTO_SLEEP_TIMEOUT_SEC);
 
-        if (storage_read_wifi_credentials(sd_ssid, sd_password) == ESP_OK) {
+        // Show OOBE splash screen with WiFi QR code
+        splash_screen_display();
+
+        if (storage_has_persistent_storage()) {
+            ESP_LOGI(TAG, "Option 1: Place wifi.txt on root of storage with:");
+            ESP_LOGI(TAG, "  Line 1: WiFi SSID");
+            ESP_LOGI(TAG, "  Line 2: WiFi Password");
+            ESP_LOGI(TAG, "  Line 3: Device Name (optional; empty keeps current name)");
+            ESP_LOGI(TAG, "  Then restart the device");
             ESP_LOGI(TAG, "===========================================");
-            ESP_LOGI(TAG, "WiFi credentials found on storage!");
-            ESP_LOGI(TAG, "Saving to NVS and connecting...");
-            ESP_LOGI(TAG, "===========================================");
+        }
+        ESP_LOGI(TAG, "Option 2: Use captive portal:");
+        ESP_LOGI(TAG, "1. Connect to WiFi: PhotoFrame - XXXXXX");
+        ESP_LOGI(TAG, "2. Open browser to: http://192.168.4.1");
+        ESP_LOGI(TAG, "3. Enter your WiFi credentials");
+        ESP_LOGI(TAG, "===========================================");
 
-            // Save credentials to NVS
-            if (wifi_manager_save_credentials(sd_ssid, sd_password) == ESP_OK) {
-                ESP_LOGI(TAG, "WiFi credentials saved to NVS");
-                ESP_LOGI(TAG, "Restarting to connect with new credentials...");
-                vTaskDelay(pdMS_TO_TICKS(2000));
-                esp_restart();
-                creds_loaded = true;
-            } else {
-                ESP_LOGE(TAG, "Failed to save WiFi credentials to NVS");
-            }
+        ESP_ERROR_CHECK(wifi_provisioning_start_ap());
+
+        while (!wifi_provisioning_is_provisioned()) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
 
-        // No credentials found, start captive portal provisioning
-        if (!creds_loaded) {
-            ESP_LOGI(TAG, "===========================================");
-            ESP_LOGI(TAG, "No WiFi credentials found - Starting AP mode");
-            ESP_LOGI(TAG, "===========================================");
-
-            // Out-of-box setup: give the user more time to scan the QR code
-            // and provision via the app before the device auto-sleeps.
-            power_manager_set_auto_sleep_timeout(OOBE_AUTO_SLEEP_TIMEOUT_SEC);
-
-            // Show OOBE splash screen with WiFi QR code
-            splash_screen_display();
-
-            if (storage_has_persistent_storage()) {
-                ESP_LOGI(TAG, "Option 1: Place wifi.txt on root of storage with:");
-                ESP_LOGI(TAG, "  Line 1: WiFi SSID");
-                ESP_LOGI(TAG, "  Line 2: WiFi Password");
-                ESP_LOGI(TAG, "  Line 3: Device Name (optional, default: PhotoFrame)");
-                ESP_LOGI(TAG, "  Then restart the device");
-                ESP_LOGI(TAG, "===========================================");
-            }
-            ESP_LOGI(TAG, "Option 2: Use captive portal:");
-            ESP_LOGI(TAG, "1. Connect to WiFi: PhotoFrame - XXXXXX");
-            ESP_LOGI(TAG, "2. Open browser to: http://192.168.4.1");
-            ESP_LOGI(TAG, "3. Enter your WiFi credentials");
-            ESP_LOGI(TAG, "===========================================");
-
-            ESP_ERROR_CHECK(wifi_provisioning_start_ap());
-
-            while (!wifi_provisioning_is_provisioned()) {
-                vTaskDelay(pdMS_TO_TICKS(1000));
-            }
-
-            // Set flag to show setup-complete screen after restart
-            nvs_handle_t nvs_handle;
-            if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
-                nvs_set_u8(nvs_handle, NVS_SETUP_COMPLETE_KEY, 1);
-                nvs_commit(nvs_handle);
-                nvs_close(nvs_handle);
-            }
-
-            ESP_LOGI(TAG, "WiFi credentials saved! Restarting...");
-            vTaskDelay(pdMS_TO_TICKS(3000));
-            esp_restart();
+        // Set flag to show setup-complete screen after restart
+        nvs_handle_t nvs_handle;
+        if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
+            nvs_set_u8(nvs_handle, NVS_SETUP_COMPLETE_KEY, 1);
+            nvs_commit(nvs_handle);
+            nvs_close(nvs_handle);
         }
+
+        ESP_LOGI(TAG, "WiFi credentials saved! Restarting...");
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        esp_restart();
     }
 
     if (connect_to_wifi_with_timeout(30)) {

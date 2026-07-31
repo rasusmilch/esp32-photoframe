@@ -4,6 +4,12 @@ A modern, feature-rich firmware for ESP32-based e-paper photo frames (currently 
 
 ![PhotoFrame](.img/esp32-photoframe.png)
 
+## Adopted project intent
+
+This fork preserves every board supported by the inspected source, with reTerminal E1002 and E1004 as the highest-priority implementation and hardware-validation targets. The local slideshow is the independent core function: local-storage startup, display, navigation, and scheduled rotation must work without Wi-Fi. Network capabilities are optional enhancements in local mode; URL mode, Home Assistant, OTA, web UI, API, upload/conversion, and companion integrations remain supported.
+
+The current firmware does not yet meet every adopted offline-startup and navigation requirement. See [governance](docs/GOVERNANCE.md), [architecture](docs/ARCHITECTURE.md), [operations](docs/OPERATIONS.md), and the [validation ledger](docs/VALIDATION.md) for the current/target distinction. Direct JPEG discovery from SD is not currently part of the slideshow contract; local discovery remains BMP, PNG, and EPDGZ, with JPEG handled by upload or conversion.
+
 ## Key Features
 
 - 🎨 **Superior Image Quality**: Measured color palette with automatic calibration produces significantly better results than stock firmware
@@ -112,7 +118,7 @@ The reTerminal E1002, E1003, and E1004 also include a SHT40 temperature/humidity
 
 ### Button Functions
 
-Buttons behave differently depending on whether the device is awake (web UI accessible) or in deep sleep.
+The table below describes the **currently implemented generic wake/rotate/clear roles**, not the adopted target semantics. Current awake handling has rotate and clear but not previous navigation or refresh-current, and it starts only after successful Wi-Fi initialization. The accepted target mappings— including E1002 green short refresh, green long clear, left previous, and right next—are authoritative in [the hardware contract](docs/HARDWARE.md) and remain pending implementation/validation.
 
 **When in deep sleep:**
 
@@ -206,9 +212,9 @@ The device supports two methods for WiFi provisioning:
 
 2. Insert SD card and power on the device
 3. Device automatically reads credentials, saves to memory, and connects
-4. The `wifi.txt` file is automatically deleted after reading (to prevent issues with invalid credentials)
+4. The bounded importer commits and verifies the complete profile before deleting the exact source file. A retained already-applied file is deletion-only recovery; see [Operations](docs/OPERATIONS.md).
 
-**Note**: If credentials are invalid, the device will clear them and fall back to captive portal mode.
+**Current implementation limitation:** a connection failure can clear credentials and restart. This is not accepted recovery behavior. The target preserves last-known-good credentials, keeps the local slideshow running, and retries in the background at a configurable interval (15 minutes by default).
 
 #### Option 2: Captive Portal
 
@@ -225,7 +231,7 @@ The device supports two methods for WiFi provisioning:
 2. Tap the "+" button on the home screen
 3. The app scans for PhotoFrame setup hotspots, connects automatically, and guides you through WiFi configuration
 
-**Re-provision:** Delete credentials with `idf.py erase-flash` or place new `wifi.txt` on SD card after clearing stored credentials
+**Re-provision:** Use a validated captive-portal or `wifi.txt` replacement workflow. `idf.py erase-flash` is an explicitly destructive factory-reset operation, not the response to temporary Wi-Fi failure. See [Operations](docs/OPERATIONS.md).
 
 ## Usage
 

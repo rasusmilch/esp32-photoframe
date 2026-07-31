@@ -3,6 +3,8 @@
 #include <esp_err.h>
 #include <stdbool.h>
 
+#include "wifi_import.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -40,14 +42,10 @@ storage_type_t storage_get_type(void);
  */
 bool storage_has_persistent_storage(void);
 
-/**
- * @brief Read WiFi credentials from "wifi.txt" file on root storage (if available)
- *
- * @param ssid Buffer to store SSID (must be at least WIFI_SSID_MAX_LEN)
- * @param password Buffer to store password (must be at least WIFI_PASS_MAX_LEN)
- * @return esp_err_t ESP_OK if found and read successfully, ESP_ERR_NOT_FOUND if not found
- */
-esp_err_t storage_read_wifi_credentials(char *ssid, char *password);
+/** Read exactly one candidate source into a caller-owned bounded buffer. No side effects. */
+wifi_import_source_result_t storage_read_wifi_import_source(void *context, const char *path,
+                                                            char *destination, size_t capacity,
+                                                            size_t *length);
 
 /**
  * @brief Unmount storage before deep sleep to release flash references

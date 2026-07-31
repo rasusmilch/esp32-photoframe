@@ -2,6 +2,7 @@ set(SOURCES
     "album_manager.c"
     "cert_pin.c"
     "color_palette.c"
+    "connectivity_policy.c"
     "config_manager.c"
     "debug_log.c"
     "display_manager.c"
@@ -16,11 +17,14 @@ set(SOURCES
     "png_decoder.c"
     "power_manager.c"
     "processing_settings.c"
+    "provisioning_form.c"
     "splash_screen.c"
     "storage.c"
     "cron.c"
     "utils.c"
     "wifi_manager.c"
+    "wifi_import.c"
+    "wifi_import_runtime.c"
     "wifi_provisioning.c"
 )
 

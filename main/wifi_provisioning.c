@@ -16,11 +16,20 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "power_manager.h"
+#include "provisioning_form.h"
 #include "utils.h"
 #include "wifi_manager.h"
 
 static const char *TAG = "wifi_prov";
 static httpd_handle_t provisioning_server = NULL;
+
+_Static_assert(PROVISIONING_SSID_CAPACITY == WIFI_SSID_MAX_LEN, "SSID capacity mismatch");
+_Static_assert(PROVISIONING_PASSWORD_CAPACITY == WIFI_PASS_MAX_LEN, "password capacity mismatch");
+_Static_assert(PROVISIONING_DEVICE_NAME_CAPACITY == DEVICE_NAME_MAX_LEN,
+               "device-name capacity mismatch");
+_Static_assert(PROVISIONING_IPV4_CAPACITY == IP_ADDR_STR_MAX_LEN, "IPv4 capacity mismatch");
+_Static_assert(sizeof(DEFAULT_DEVICE_NAME) <= PROVISIONING_DEVICE_NAME_CAPACITY,
+               "default device name does not fit provisioning candidate");
 
 // Structure to pass credentials to test task
 typedef struct {
@@ -282,73 +291,54 @@ static esp_err_t provision_scan_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// Extract one field from a URL-encoded form body ("key=value&..."), decoding
-// '+' and %XX escapes. Returns true when the key is present (value may be
-// empty). Unlike the positional parsing above, this is order-independent.
-static bool get_form_field(const char *buf, const char *key, char *out, size_t out_len)
+static int provisioning_http_receive(void *context, char *destination, size_t capacity)
 {
-    size_t key_len = strlen(key);
-    const char *p = buf;
-    while ((p = strstr(p, key)) != NULL) {
-        // Must be the start of a field: beginning of buffer or right after '&',
-        // and followed by '='.
-        if ((p == buf || p[-1] == '&') && p[key_len] == '=') {
-            break;
-        }
-        p += key_len;
+    int result = httpd_req_recv((httpd_req_t *) context, destination, capacity);
+    if (result == HTTPD_SOCK_ERR_TIMEOUT) {
+        return PROVISIONING_RECV_TIMEOUT;
     }
-    if (p == NULL) {
-        return false;
-    }
+    return result;
+}
 
-    const char *v = p + key_len + 1;
-    size_t o = 0;
-    while (*v != '\0' && *v != '&' && o < out_len - 1) {
-        if (*v == '+') {
-            out[o++] = ' ';
-            v++;
-        } else if (*v == '%' && v[1] != '\0' && v[2] != '\0') {
-            char hex[3] = {v[1], v[2], 0};
-            out[o++] = (char) strtol(hex, NULL, 16);
-            v += 3;
-        } else {
-            out[o++] = *v++;
-        }
-    }
-    out[o] = '\0';
-    return true;
+static esp_err_t provisioning_client_error(httpd_req_t *req, const char *message)
+{
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, message);
+    return ESP_FAIL;
 }
 
 static esp_err_t provision_save_handler(httpd_req_t *req)
 {
-    char buf[512];
-    int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (ret <= 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No data received");
+    if (req->content_len > PROVISIONING_FORM_MAX_BODY_LEN) {
+        httpd_resp_set_status(req, "413 Payload Too Large");
+        httpd_resp_send(req, "Provisioning form is too large", HTTPD_RESP_USE_STRLEN);
         return ESP_FAIL;
     }
-    buf[ret] = '\0';
-
-    char ssid[WIFI_SSID_MAX_LEN] = {0};
-    char password[WIFI_PASS_MAX_LEN] = {0};
-    char device_name[DEVICE_NAME_MAX_LEN] = {0};
-
-    // Order-independent, URL-decoding field extraction. The previous
-    // positional parser sliced deviceName from "&deviceName=" to the END of
-    // the body, so any field appended after it (the #43 network settings) got
-    // swallowed into the device name — and, via hostname sanitization, into
-    // the mDNS name (e.g. "...-ipmode-dhcp.local").
-    if (!get_form_field(buf, "ssid", ssid, sizeof(ssid)) || ssid[0] == '\0') {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing SSID");
-        return ESP_FAIL;
+    char body[PROVISIONING_FORM_BODY_CAPACITY];
+    provisioning_read_result_t read_result = provisioning_read_exact(
+        req->content_len, body, sizeof(body), provisioning_http_receive, req);
+    if (read_result != PROVISIONING_READ_OK) {
+        return provisioning_client_error(req, read_result == PROVISIONING_READ_ERR_TIMEOUT
+                                                  ? "Timed out receiving the provisioning form"
+                                                  : "Incomplete provisioning form body");
     }
-    get_form_field(buf, "password", password, sizeof(password));
-    get_form_field(buf, "deviceName", device_name, sizeof(device_name));
 
-    // Use default if device name is empty
-    if (strlen(device_name) == 0) {
-        strncpy(device_name, DEFAULT_DEVICE_NAME, DEVICE_NAME_MAX_LEN - 1);
-        device_name[DEVICE_NAME_MAX_LEN - 1] = '\0';
+    provisioning_candidate_t candidate;
+    provisioning_form_result_t parse_result =
+        provisioning_form_parse(body, req->content_len, &candidate);
+    if (parse_result != PROVISIONING_FORM_OK) {
+        const char *message = "Malformed provisioning form";
+        if (parse_result == PROVISIONING_FORM_ERR_MISSING_SSID) {
+            message = "Missing or empty SSID";
+        } else if (parse_result == PROVISIONING_FORM_ERR_DUPLICATE_FIELD) {
+            message = "Duplicate provisioning field";
+        } else if (parse_result == PROVISIONING_FORM_ERR_FIELD_OVERFLOW) {
+            message = "Decoded provisioning field is too long";
+        } else if (parse_result == PROVISIONING_FORM_ERR_INVALID_IP_MODE) {
+            message = "Invalid IP mode";
+        } else if (parse_result == PROVISIONING_FORM_ERR_MISSING_STATIC_FIELD) {
+            message = "Static IP mode requires IP, netmask, and gateway";
+        }
+        return provisioning_client_error(req, message);
     }
 
     // Optional network settings (#43): static IP + DNS override, for networks
@@ -356,47 +346,37 @@ static esp_err_t provision_save_handler(httpd_req_t *req)
     // runs with the exact configuration that will be saved. A save without
     // ipMode=static always resets to DHCP — re-provisioning is the recovery
     // path for a broken static config.
-    char ip_mode_str[8] = {0};
-    char field_ip[IP_ADDR_STR_MAX_LEN] = {0};
-    char field_mask[IP_ADDR_STR_MAX_LEN] = {0};
-    char field_gw[IP_ADDR_STR_MAX_LEN] = {0};
-    char field_dns[IP_ADDR_STR_MAX_LEN] = {0};
-    get_form_field(buf, "ipMode", ip_mode_str, sizeof(ip_mode_str));
-    bool want_static = (strcmp(ip_mode_str, "static") == 0);
-    if (want_static) {
+    if (candidate.use_static_ip) {
         esp_ip4_addr_t parsed;
-        if (!get_form_field(buf, "staticIp", field_ip, sizeof(field_ip)) ||
-            esp_netif_str_to_ip4(field_ip, &parsed) != ESP_OK ||
-            !get_form_field(buf, "staticNetmask", field_mask, sizeof(field_mask)) ||
-            esp_netif_str_to_ip4(field_mask, &parsed) != ESP_OK ||
-            !get_form_field(buf, "staticGateway", field_gw, sizeof(field_gw)) ||
-            esp_netif_str_to_ip4(field_gw, &parsed) != ESP_OK) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                                "Invalid static IP configuration (IP, netmask and gateway must be "
-                                "valid IPv4 addresses)");
-            return ESP_FAIL;
+        if (esp_netif_str_to_ip4(candidate.static_ip, &parsed) != ESP_OK ||
+            esp_netif_str_to_ip4(candidate.static_netmask, &parsed) != ESP_OK ||
+            esp_netif_str_to_ip4(candidate.static_gateway, &parsed) != ESP_OK) {
+            return provisioning_client_error(req, "Invalid static IPv4 configuration");
         }
     }
-    if (get_form_field(buf, "dnsServer", field_dns, sizeof(field_dns)) && field_dns[0] != '\0') {
+    if (candidate.dns_server_present && candidate.dns_server[0] != '\0') {
         esp_ip4_addr_t parsed;
-        if (esp_netif_str_to_ip4(field_dns, &parsed) != ESP_OK) {
-            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid DNS server address");
-            return ESP_FAIL;
+        if (esp_netif_str_to_ip4(candidate.dns_server, &parsed) != ESP_OK) {
+            return provisioning_client_error(req, "Invalid DNS server address");
         }
     }
 
-    if (want_static) {
-        config_manager_set_static_ip(field_ip);
-        config_manager_set_static_netmask(field_mask);
-        config_manager_set_static_gateway(field_gw);
+    if (!candidate.device_name_present || candidate.device_name[0] == '\0') {
+        memcpy(candidate.device_name, DEFAULT_DEVICE_NAME, sizeof(DEFAULT_DEVICE_NAME));
+    }
+
+    // All body, form, field, mode, and address validation is complete. Side effects start here.
+    if (candidate.use_static_ip) {
+        config_manager_set_static_ip(candidate.static_ip);
+        config_manager_set_static_netmask(candidate.static_netmask);
+        config_manager_set_static_gateway(candidate.static_gateway);
         config_manager_set_ip_mode(IP_MODE_STATIC);
     } else {
         config_manager_set_ip_mode(IP_MODE_DHCP);
     }
-    config_manager_set_dns_server(field_dns);
+    config_manager_set_dns_server(candidate.dns_server);
 
-    ESP_LOGI(TAG, "Received WiFi credentials - SSID: %s", ssid);
-    ESP_LOGI(TAG, "Device name: %s", device_name);
+    ESP_LOGI(TAG, "Received validated WiFi provisioning request");
     ESP_LOGI(TAG, "Testing WiFi connection in APSTA mode...");
 
     // Switch to APSTA mode to test connection while keeping AP running
@@ -404,8 +384,8 @@ static esp_err_t provision_save_handler(httpd_req_t *req)
 
     // Configure STA with provided credentials
     wifi_config_t sta_config = {0};
-    strncpy((char *) sta_config.sta.ssid, ssid, sizeof(sta_config.sta.ssid) - 1);
-    strncpy((char *) sta_config.sta.password, password, sizeof(sta_config.sta.password) - 1);
+    memcpy(sta_config.sta.ssid, candidate.ssid, strlen(candidate.ssid) + 1U);
+    memcpy(sta_config.sta.password, candidate.password, strlen(candidate.password) + 1U);
     sta_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     sta_config.sta.pmf_cfg.capable = true;
     sta_config.sta.pmf_cfg.required = false;
@@ -434,7 +414,7 @@ static esp_err_t provision_save_handler(httpd_req_t *req)
         );
 
     if (!(bits & WIFI_CONNECTED_BIT)) {
-        ESP_LOGW(TAG, "Failed to connect to WiFi network: %s", ssid);
+        ESP_LOGW(TAG, "Failed to connect using validated provisioning request");
 
         // Connection failed - switch back to AP-only mode
         esp_wifi_disconnect();
@@ -460,15 +440,15 @@ static esp_err_t provision_save_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "WiFi connection successful! Saving credentials...");
 
     // Connection successful - save credentials
-    esp_err_t err = wifi_manager_save_credentials(ssid, password);
+    esp_err_t err = wifi_manager_save_credentials(candidate.ssid, candidate.password);
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save credentials");
         return ESP_FAIL;
     }
 
     // Save device name
-    config_manager_set_device_name(device_name);
-    ESP_LOGI(TAG, "Device name saved: %s", device_name);
+    config_manager_set_device_name(candidate.device_name);
+    ESP_LOGI(TAG, "Device name saved");
 
     const char *response =
         "<html><body><h1>WiFi Configured!</h1>"
