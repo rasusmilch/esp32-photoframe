@@ -1,11 +1,11 @@
 {
-  "fail_a_second_failure_only.jsonl": "stop requested before attempt outcome",
+  "fail_a_retry_missing_outcome.jsonl": "stop requested before attempt outcome",
   "fail_active_stop_fence.jsonl": "stop event produced fence while context active",
   "fail_ap_fenced_stastop.jsonl": "stop event does not apply",
   "fail_apsta_one_stop.jsonl": "fence before required stop mask complete",
   "fail_callback_reconnect.jsonl": "hidden callback reconnect",
   "fail_context_mismatch.jsonl": "context changed",
-  "fail_d_second_failure_marker.jsonl": "scenario D ordered evidence invalid",
+  "fail_d_ap_success_wrong_order.jsonl": "scenario D ordered evidence invalid",
   "fail_deadline_inconsistent.jsonl": "quarantine deadline inconsistent",
   "fail_deadline_reset.jsonl": "queue activity reset quarantine deadline",
   "fail_duplicate_apsta_fence.jsonl": "duplicate fence",

@@ -60,7 +60,13 @@ static bool run_finished;
 static const char *scenario_phase = "initial";
 static bool first_epoch = true;
 /* Owner-task-local; never copied into callback-visible physical identity. */
-static bool attempt_outcome_emitted;
+typedef struct {
+    uint64_t epoch;
+    uint64_t attempt_id;
+    bool emitted;
+} owner_outcome_t;
+static owner_outcome_t owner_outcome;
+static unsigned completed_outcomes;
 static uint32_t scenario_milestones;
 static int64_t fence_timestamp_ms;
 static int64_t quarantine_deadline_ms;
@@ -148,7 +154,8 @@ static bool scenario_ready(void)
         MILESTONE_API_SUBMISSION | MILESTONE_UPDATE_2,
     };
     unsigned required_epochs = (CONFIG_PROBE_SCENARIO == 5 || CONFIG_PROBE_SCENARIO == 6) ? 1U : 2U;
-    return epochs_started == required_epochs &&
+    return epochs_started == required_epochs && completed_outcomes == required_epochs &&
+           owner_outcome.emitted && owner_outcome.epoch != 0 &&
            (scenario_milestones & required[CONFIG_PROBE_SCENARIO - 1]) ==
                required[CONFIG_PROBE_SCENARIO - 1];
 }
@@ -157,6 +164,24 @@ static bool contexts_equal(physical_context_t left, physical_context_t right)
 {
     return left.epoch == right.epoch && left.attempt_id == right.attempt_id &&
            left.generation == right.generation && left.owner == right.owner;
+}
+
+static bool outcome_matches(physical_context_t context)
+{
+    return owner_outcome.emitted && owner_outcome.epoch == context.epoch &&
+           owner_outcome.attempt_id == context.attempt_id;
+}
+
+static bool record_outcome(physical_context_t context)
+{
+    if (owner_outcome.emitted || owner_outcome.epoch != context.epoch ||
+        owner_outcome.attempt_id != context.attempt_id) {
+        latch_fault(FAULT_CONTEXT);
+        return false;
+    }
+    owner_outcome.emitted = true;
+    completed_outcomes++;
+    return true;
 }
 
 static const char *owner_name(owner_t owner)
@@ -305,7 +330,10 @@ static esp_err_t start_epoch(owner_t owner, uint64_t generation, wifi_mode_t mod
                                     .mode = mode,
                                     .required_stop_mask = required_stop_mask(mode)};
     active_store(current);
-    attempt_outcome_emitted = false;
+    owner_outcome = (owner_outcome_t) {
+        .epoch = current.epoch,
+        .attempt_id = current.attempt_id,
+    };
     epochs_started++;
     scenario_phase = first_epoch ? "first_attempt" : "second_attempt";
     trace("owner", "PROBE", 0, "epoch_start", current, 0, "epoch_start", "ok");
@@ -356,7 +384,7 @@ static esp_err_t start_epoch(owner_t owner, uint64_t generation, wifi_mode_t mod
 static void request_stop(const char *cause)
 {
     physical_context_t current = active_snapshot();
-    if (current.state != STATE_ACTIVE || !attempt_outcome_emitted) {
+    if (current.state != STATE_ACTIVE || !outcome_matches(current)) {
         trace("owner", "PROBE", 0, cause, current, 0, "probe_fault", "failed");
         latch_fault(FAULT_CONTEXT);
         return;
@@ -398,7 +426,8 @@ static void owner_task(void *arg)
         physical_context_t replaced = active_snapshot();
         trace("owner", "PROBE", 0, "replacement_requested", replaced, 0, "attempt_outcome",
               "replaced");
-        attempt_outcome_emitted = true;
+        if (!record_outcome(replaced))
+            return;
         request_stop("replacement_stop");
     }
 
@@ -489,13 +518,13 @@ static void owner_task(void *arg)
                         scenario_milestones |= MILESTONE_RESPONSE;
                         trace("owner", "PROBE", 0, "attempt_timeout", snapshot, 0,
                               "attempt_outcome", "timeout");
-                        attempt_outcome_emitted = true;
+                        (void) record_outcome(snapshot);
                         trace("owner", "PROBE", 0, "http_response_complete", snapshot, 0,
                               "response_complete", "ok");
                     } else {
                         trace("owner", "PROBE", 0, "attempt_timeout", snapshot, 0,
                               "attempt_outcome", "timeout");
-                        attempt_outcome_emitted = true;
+                        (void) record_outcome(snapshot);
                     }
                     if (CONFIG_PROBE_SCENARIO == 6)
                         scenario_milestones |= MILESTONE_TIMEOUT;
@@ -531,6 +560,14 @@ static void owner_task(void *arg)
             }
             continue;
         }
+        physical_context_t current = active_snapshot();
+        if (!event.fence && !event.fence_post_result && !event.start_next &&
+            !contexts_equal(event.context, current)) {
+            trace("owner", "PROBE", 0, "queued_context_mismatch", event.context, event.reason,
+                  "probe_fault", "failed");
+            latch_fault(FAULT_CONTEXT);
+            continue;
+        }
         if (event.fence) {
             scenario_phase = "post_fence_observation";
             fence_timestamp_ms = esp_timer_get_time() / 1000;
@@ -539,31 +576,31 @@ static void owner_task(void *arg)
         }
         const char *name = event.fence ? "fence_dispatched" : event_name(event.base, event.id);
         const char *outcome = NULL;
-        if (!event.fence && active_snapshot().state == STATE_ACTIVE) {
-            if (event.base == IP_EVENT && event.id == IP_EVENT_STA_GOT_IP &&
-                (CONFIG_PROBE_SCENARIO == 5 || !first_epoch)) {
+        if (!event.fence && current.state == STATE_ACTIVE && !owner_outcome.emitted) {
+            bool sta_capable = current.mode == WIFI_MODE_STA || current.mode == WIFI_MODE_APSTA;
+            if (event.base == IP_EVENT && event.id == IP_EVENT_STA_GOT_IP && sta_capable) {
                 outcome = "success";
                 if (CONFIG_PROBE_SCENARIO == 5)
                     scenario_phase = "candidate_connected";
             } else if (event.base == WIFI_EVENT && event.id == WIFI_EVENT_AP_START &&
-                       CONFIG_PROBE_SCENARIO == 4 && !first_epoch) {
+                       current.mode == WIFI_MODE_AP && CONFIG_PROBE_SCENARIO == 4 && !first_epoch) {
                 outcome = "success";
                 scenario_phase = "ap_observation";
             } else if (event.base == WIFI_EVENT && event.id == WIFI_EVENT_STA_DISCONNECTED &&
-                       first_epoch && (CONFIG_PROBE_SCENARIO == 1 || CONFIG_PROBE_SCENARIO == 4)) {
+                       sta_capable) {
                 outcome = "failure";
-                scenario_phase = CONFIG_PROBE_SCENARIO == 4 ? "candidate_failed" : "first_failed";
+                if (first_epoch && (CONFIG_PROBE_SCENARIO == 1 || CONFIG_PROBE_SCENARIO == 4))
+                    scenario_phase =
+                        CONFIG_PROBE_SCENARIO == 4 ? "candidate_failed" : "first_failed";
             }
         }
         trace("owner", base, event.id, name, event.context, event.reason,
               event.fence ? "fence_observed" : outcome ? "attempt_outcome" : "event_observed",
               outcome ? outcome : "ok");
         if (outcome) {
-            if (attempt_outcome_emitted) {
-                latch_fault(FAULT_CONTEXT);
+            if (!record_outcome(current)) {
                 continue;
             }
-            attempt_outcome_emitted = true;
         }
         if (!event.fence && active_snapshot().state == STATE_FENCED &&
             (event.base == WIFI_EVENT || event.base == IP_EVENT)) {
