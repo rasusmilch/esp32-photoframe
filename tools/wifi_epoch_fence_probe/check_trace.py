@@ -3,8 +3,9 @@
 import argparse,json,sys
 from pathlib import Path
 PREFIX='EPOCH_TRACE '
-REQUIRED={'run','scenario','scenario_phase','post_fence_observe_ms','seq','ts_ms','source','base','event_id','event','epoch','attempt_id','generation','owner','state','mode','required_stop_mask','observed_stop_mask','fence_ts_ms','quarantine_deadline_ms','reason','action','result'}
-FORBIDDEN={'ssid','password','token','authorization','body','credentials'}
+REQUIRED={'trace_schema_version','run','scenario','scenario_phase','post_fence_observe_ms','seq','ts_ms','source','base','event_id','event','epoch','attempt_id','generation','owner','state','mode','required_stop_mask','observed_stop_mask','fence_ts_ms','quarantine_deadline_ms','reason','action','result'}
+ALLOWED=REQUIRED
+FORBIDDEN={'ssid','password','token','authorization','body','credentials','form','complete_form','credential_body'}
 DRIVER={'sta_start','sta_stop','sta_connected','sta_disconnected','ap_start','ap_stop','got_ip','lost_ip','wifi_other','ip_other'}
 STOP={'sta_stop':1,'ap_stop':2}; MODE_MASK={1:1,2:2,3:3}; SCENARIOS=set('ABCDEFG')
 PHASES={
@@ -24,8 +25,10 @@ def check_records(lines):
   try:r=json.loads(line.split(PREFIX,1)[1])
   except json.JSONDecodeError as e:bad(n,f'invalid JSON: {e.msg}');continue
   count+=1;miss=REQUIRED-r.keys()
-  if miss:bad(n,f'missing fields: {sorted(miss)}');continue
   if FORBIDDEN & {str(k).lower() for k in r}:bad(n,'secret fields present')
+  if miss:bad(n,f'missing fields: {sorted(miss)}');continue
+  if r.keys()-ALLOWED:bad(n,f'unexpected fields: {sorted(r.keys()-ALLOWED)}');continue
+  if r['trace_schema_version']!=1:bad(n,'unknown trace schema version');continue
   if r['scenario'] not in SCENARIOS:bad(n,'unknown scenario');continue
   q=runs.setdefault(r['run'],{'s':r['scenario'],'observe':r['post_fence_observe_ms'],'seq':-1,'ts':-1,'active':None,'epochs':{},'attempts':set(),'complete':0,'fault':False,'rows':[],'line':n})
   q['rows'].append((n,r));q['line']=n
@@ -46,16 +49,35 @@ def check_records(lines):
    if r['attempt_id'] in q['attempts']:bad(n,'attempt ID reused')
    expected=MODE_MASK.get(r['mode'],0)
    if r['required_stop_mask']!=expected:bad(n,'wrong required stop mask')
-   q['epochs'][ep]={'ctx':ctx,'req':expected,'obs':0,'stopping':False,'fence':False,'fence_ts':None,'deadline':None,'observe':False,'release':False,'ap':False,'sta':False}
+   q['epochs'][ep]={'ctx':ctx,'req':expected,'obs':0,'stopping':False,'fence':False,'fence_ts':None,'deadline':None,'observe':False,'release':False,'ap':False,'sta':False,'outcome':None}
    q['attempts'].add(r['attempt_id']);q['active']=ep
   elif ep in q['epochs'] and a!='desired_generation_update' and ctx!=q['epochs'][ep]['ctx']:bad(n,'physical epoch context changed or ownership overlap')
   x=q['epochs'].get(ep)
+  terminal={'got_ip':('IP_EVENT',0,'success'),'sta_disconnected':('WIFI_EVENT',5,'failure'),'ap_start':('WIFI_EVENT',12,'success')}
+  if e in terminal:
+   eb,eid,_=terminal[e]
+   if r['base']!=eb or r['event_id']!=eid:bad(n,f'{e} raw event mismatch')
+  for symbol,(eb,eid,_) in terminal.items():
+   if r['base']==eb and r['event_id']==eid and e!=symbol:bad(n,f'{symbol} raw event mismatch')
+  if a=='attempt_outcome':
+   if r['result'] not in {'success','failure','timeout','replaced'}:bad(n,'invalid attempt outcome result')
+   if not x:bad(n,'attempt outcome without started epoch')
+   elif q['active']!=ep or x['release']:bad(n,'attempt outcome for inactive epoch')
+   elif ctx!=x['ctx']:bad(n,'attempt outcome context changed')
+   elif x['stopping'] or x['fence']:bad(n,'attempt outcome after stop')
+   else:
+    evidence=(r['base'],r['event_id'],e,r['result'])
+    valid={('IP_EVENT',0,'got_ip','success'),('WIFI_EVENT',5,'sta_disconnected','failure'),('WIFI_EVENT',12,'ap_start','success'),('PROBE',0,'attempt_timeout','timeout'),('PROBE',0,'replacement_requested','replaced')}
+    if evidence not in valid:bad(n,'invalid attempt outcome evidence')
+    if x['outcome'] is not None:bad(n,'duplicate attempt outcome' if x['outcome']==evidence else 'conflicting attempt outcome')
+    else:x['outcome']=evidence
   if x and r['required_stop_mask']!=x['req']:
    if q['s']=='E' and a=='set_mode_sta' and r['result']=='ok' and r['required_stop_mask']==1:x['req']=1
    else:bad(n,'required stop mask changed unexpectedly')
   if a=='ap_configured' and r['result']=='ok' and x:x['ap']=True
   if a=='sta_configured' and r['result']=='ok' and x:x['sta']=True
   if a=='stop_requested' and x:
+   if x['outcome'] is None:bad(n,'stop requested before attempt outcome')
    if x['stopping']:bad(n,'repeated stop request while stopping')
    x['stopping']=True
   if e in DRIVER:
@@ -82,6 +104,7 @@ def check_records(lines):
    elif r['ts_ms']<x['deadline'] or r['ts_ms']-x['fence_ts']<q['observe']:bad(n,'quarantine interval too short')
    else:x['observe']=True
   if a=='epoch_release' and x:
+   if x['outcome'] is None:bad(n,'release before attempt outcome')
    if not x['observe']:bad(n,'release before post-fence observation completes')
    else:x['release']=True;q['active']=None
   if a=='callback_reconnect':bad(n,'hidden callback reconnect')
@@ -92,11 +115,13 @@ def check_records(lines):
    if r['scenario_phase']!='terminal':bad(n,'run_complete before terminal scenario phase')
    if q['active'] is not None:bad(n,'run_complete while epoch active')
    if q['fault']:bad(n,'run_complete after probe or scenario fault')
+   if any(x['outcome'] is None for x in q['epochs'].values()):bad(n,'run_complete with missing attempt outcome')
  for rid,q in runs.items():
   rr=[r for _,r in q['rows']];starts=[r for r in rr if r['action']=='epoch_start']; pos=lambda pred:[i for i,r in enumerate(rr) if pred(r)]
   def req(c,m):
    if not c:bad(q['line'],m)
   for ep,x in q['epochs'].items():
+   if x['outcome'] is None:bad(q['line'],f'epoch {ep} missing attempt outcome')
    if x['ctx'][4] in (2,3) and not x['ap']:bad(q['line'],f'epoch {ep} missing AP configuration')
    if x['ctx'][4] in (1,3) and not x['sta']:bad(q['line'],f'epoch {ep} missing STA configuration')
    if x['obs']!=x['req']:bad(q['line'],f'epoch {ep} incomplete stop mask')
@@ -111,13 +136,14 @@ def check_records(lines):
     if not found:req(False,msg);return
     indexes.append(found[0])
    req(indexes==sorted(indexes) and len(set(indexes))==len(indexes),msg)
-  if s=='A':req(len(starts)==2,'scenario A requires exactly one retry');order([('epoch_start',1),('attempt_failed',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('stop_requested',2),('epoch_release',2),('run_complete',None)],'scenario A ordered evidence invalid')
-  elif s=='B':order([('epoch_start',1),('desired_generation_update',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('epoch_release',2)],'scenario B replacement ordering invalid');req(len(starts)==2 and starts[1]['generation']==2,'scenario B replacement generation invalid')
-  elif s=='C':order([('epoch_start',1),('desired_generation_update',1),('stop_requested',1),('epoch_release',1),('epoch_start',2)],'scenario C update ordering invalid');ups=[r['generation'] for r in rr if r['action']=='desired_generation_update'];req(ups[:2]==[2,3] and len(starts)==2 and starts[1]['generation']==3 and all(r['generation']!=2 for r in starts),'scenario C generation sequence invalid')
-  elif s=='D':order([('epoch_start',1),('candidate_failed',1),('response_complete',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('ap_configured',2),('event_observed',2),('stop_requested',2),('epoch_release',2)],'scenario D ordered evidence invalid');req(len(starts)==2 and starts[0]['owner']=='portal' and starts[0]['mode']==3 and starts[1]['owner']=='portal' and starts[1]['mode']==2,'scenario D epoch modes invalid')
-  elif s=='E':order([('ap_configured',1),('sta_configured',1),('event_observed',1),('persist_simulated',1),('response_complete',1),('set_mode_sta',1),('sta_observation_complete',1),('stop_requested',1),('fence_observed',1),('post_fence_observation_complete',1),('epoch_release',1),('run_complete',None)],'scenario E ordered evidence invalid');mode=pos(lambda r:r['action']=='set_mode_sta');obs=pos(lambda r:r['action']=='sta_observation_complete');req(not any(r['event']=='sta_disconnected' for r in rr[mode[0]:obs[0]+1]) if mode and obs else False,'scenario E disconnected during observation')
-  elif s=='F':order([('epoch_start',1),('timeout',1),('stop_requested',1),('fence_observed',1),('epoch_release',1)],'scenario F timeout ordering invalid');req(not any(r['event']=='got_ip' for r in rr),'scenario F connected before timeout')
-  elif s=='G':order([('epoch_start',1),('configuration_api_submission',1),('desired_generation_update',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('epoch_release',2)],'scenario G replacement ordering invalid');req(len(starts)==2 and starts[0]['owner']==starts[1]['owner'] and starts[1]['generation']==2,'scenario G replacement owner or generation invalid')
+  outcome=lambda ep,result:pos(lambda r:r['action']=='attempt_outcome' and r['epoch']==ep and r['result']==result)
+  if s=='A':req(len(starts)==2,'scenario A requires exactly one retry');req(bool(outcome(1,'failure') or outcome(1,'timeout')),'scenario A first outcome invalid');req(bool(outcome(2,'success')),'scenario A second outcome invalid');order([('epoch_start',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('stop_requested',2),('epoch_release',2),('run_complete',None)],'scenario A ordered evidence invalid')
+  elif s=='B':order([('epoch_start',1),('desired_generation_update',1),('attempt_outcome',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('attempt_outcome',2),('epoch_release',2)],'scenario B replacement ordering invalid');req(bool(outcome(1,'replaced') and outcome(2,'success')) and len(starts)==2 and starts[1]['generation']==2,'scenario B replacement generation invalid')
+  elif s=='C':order([('epoch_start',1),('desired_generation_update',1),('attempt_outcome',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('attempt_outcome',2)],'scenario C update ordering invalid');ups=[r['generation'] for r in rr if r['action']=='desired_generation_update'];req(ups[:2]==[2,3] and outcome(1,'replaced') and outcome(2,'success') and len(starts)==2 and starts[1]['generation']==3 and all(r['generation']!=2 for r in starts),'scenario C generation sequence invalid')
+  elif s=='D':order([('epoch_start',1),('attempt_outcome',1),('response_complete',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('ap_configured',2),('attempt_outcome',2),('ap_observation_complete',2),('stop_requested',2),('epoch_release',2)],'scenario D ordered evidence invalid');req(bool(outcome(1,'failure') or outcome(1,'timeout')) and bool(outcome(2,'success')),'scenario D outcomes invalid');req(len(starts)==2 and starts[0]['owner']=='portal' and starts[0]['mode']==3 and starts[1]['owner']=='portal' and starts[1]['mode']==2,'scenario D epoch modes invalid')
+  elif s=='E':order([('ap_configured',1),('sta_configured',1),('attempt_outcome',1),('persist_simulated',1),('response_complete',1),('set_mode_sta',1),('sta_observation_complete',1),('stop_requested',1),('fence_observed',1),('post_fence_observation_complete',1),('epoch_release',1),('run_complete',None)],'scenario E ordered evidence invalid');req(bool(outcome(1,'success')),'scenario E exact GOT_IP outcome missing');mode=pos(lambda r:r['action']=='set_mode_sta');obs=pos(lambda r:r['action']=='sta_observation_complete');req(not any(r['event']=='sta_disconnected' for r in rr[mode[0]:obs[0]+1]) if mode and obs else False,'scenario E disconnected during observation')
+  elif s=='F':order([('epoch_start',1),('attempt_outcome',1),('stop_requested',1),('fence_observed',1),('epoch_release',1)],'scenario F timeout ordering invalid');req(bool(outcome(1,'timeout')) and not any(r['event']=='got_ip' for r in rr),'scenario F connected before timeout')
+  elif s=='G':order([('epoch_start',1),('configuration_api_submission',1),('desired_generation_update',1),('attempt_outcome',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('attempt_outcome',2),('epoch_release',2)],'scenario G replacement ordering invalid');req(bool(outcome(1,'replaced') and outcome(2,'success')) and len(starts)==2 and starts[0]['owner']==starts[1]['owner'] and starts[1]['generation']==2,'scenario G replacement owner or generation invalid')
   if q['complete']!=1:bad(q['line'],f'run {rid} missing run_complete')
   if q['active'] is not None:bad(q['line'],f'run {rid} ended with active epoch')
  if not count:bad(0,'no trace records found')

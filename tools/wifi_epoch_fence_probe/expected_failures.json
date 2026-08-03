@@ -1,5 +1,5 @@
 {
-  "fail_a_second_failure_only.jsonl": "scenario A ordered evidence invalid",
+  "fail_a_second_failure_only.jsonl": "stop requested before attempt outcome",
   "fail_active_stop_fence.jsonl": "stop event produced fence while context active",
   "fail_ap_fenced_stastop.jsonl": "stop event does not apply",
   "fail_apsta_one_stop.jsonl": "fence before required stop mask complete",
