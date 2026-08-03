@@ -4,9 +4,10 @@ ROOT=Path(__file__).parent;CHECK=ROOT/'check_trace.py';TRACES=ROOT/'traces'
 class CheckerFixtures(unittest.TestCase):
  def run_check(self,path):return subprocess.run([sys.executable,str(CHECK),str(path)],text=True,capture_output=True)
  def check_rows(self,rows):
-  with tempfile.NamedTemporaryFile('w',delete=False) as f:
-   f.write(''.join('EPOCH_TRACE '+json.dumps(r)+'\n' for r in rows));name=f.name
-  return self.run_check(name)
+  with tempfile.TemporaryDirectory() as directory:
+   path=Path(directory)/'trace.jsonl'
+   path.write_text(''.join('EPOCH_TRACE '+json.dumps(r)+'\n' for r in rows))
+   return self.run_check(path)
  def test_all_scenarios_and_evidence_stage_truncations(self):
   for path in sorted(TRACES.glob('pass_scenario_*.jsonl')):
    lines=path.read_text().splitlines();rows=[json.loads(x[12:]) for x in lines]
@@ -16,8 +17,9 @@ class CheckerFixtures(unittest.TestCase):
     if r['event'] in {'sta_stop','ap_stop'} or r['action'] in {'attempt_outcome','stop_requested','fence_observed','post_fence_observation_complete','epoch_release','run_complete'}:cuts.update({i-1,i})
    for length in sorted(cuts):
     if length>=len(lines):continue
-    with tempfile.NamedTemporaryFile('w',delete=False) as f:f.write('\n'.join(lines[:length])+'\n');name=f.name
-    self.assertNotEqual(self.run_check(name).returncode,0,f'{path.name} prefix {length}')
+    with tempfile.TemporaryDirectory() as directory:
+     prefix=Path(directory)/'prefix.jsonl';prefix.write_text('\n'.join(lines[:length])+'\n')
+     self.assertNotEqual(self.run_check(prefix).returncode,0,f'{path.name} prefix {length}')
  def test_each_failure_has_intended_reason(self):
   expected=json.loads((ROOT/'expected_failures.json').read_text())
   self.assertEqual(set(expected),{p.name for p in TRACES.glob('fail_*.jsonl')})
@@ -65,4 +67,65 @@ class CheckerFixtures(unittest.TestCase):
   rows=[json.loads(x[12:]) for x in (TRACES/'pass_scenario_e.jsonl').read_text().splitlines()]
   oi=next(i for i,r in enumerate(rows) if r['action']=='attempt_outcome');rows.insert(oi+1,dict(rows[oi],seq=rows[oi]['seq']+0.5,base='PROBE',event_id=0,event='attempt_timeout',result='timeout'))
   result=self.check_rows(rows);self.assertNotEqual(result.returncode,0);self.assertIn('conflicting attempt outcome',result.stderr)
+ def test_first_terminal_results_are_not_demoted(self):
+  cases=[('pass_scenario_a.jsonl',1,'got_ip','success'),
+         ('pass_scenario_a.jsonl',2,'sta_disconnected','failure'),
+         ('pass_scenario_e.jsonl',1,'sta_disconnected','failure')]
+  for filename,epoch,event,result in cases:
+   rows=[json.loads(x[12:]) for x in (TRACES/filename).read_text().splitlines()]
+   row=next(r for r in rows if r['action']=='attempt_outcome' and r['epoch']==epoch)
+   row.update(base='IP_EVENT' if event=='got_ip' else 'WIFI_EVENT',event_id=0 if event=='got_ip' else 5,event=event,result=result,action='event_observed')
+   checked=self.check_rows(rows)
+   self.assertNotEqual(checked.returncode,0,filename)
+   self.assertIn('active terminal event must be attempt outcome',checked.stderr)
+ def test_generic_disconnect_cannot_be_followed_by_timeout(self):
+  rows=[json.loads(x[12:]) for x in (TRACES/'pass_scenario_f.jsonl').read_text().splitlines()]
+  timeout=next(i for i,r in enumerate(rows) if r['action']=='attempt_outcome')
+  disconnected=dict(rows[timeout],seq=rows[timeout]['seq']-.5,base='WIFI_EVENT',event_id=5,
+                    event='sta_disconnected',action='event_observed',result='ok')
+  rows.insert(timeout,disconnected)
+  checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0)
+  self.assertIn('active terminal event must be attempt outcome',checked.stderr)
+ def test_stale_terminal_context_cannot_classify_active_attempt(self):
+  rows=[json.loads(x[12:]) for x in (TRACES/'pass_scenario_a.jsonl').read_text().splitlines()]
+  second=next(r for r in rows if r['action']=='attempt_outcome' and r['epoch']==2)
+  second.update(epoch=1,attempt_id=1,generation=1)
+  checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0)
+  self.assertIn('attempt outcome for inactive epoch',checked.stderr)
+ def test_scenario_c_requires_update_three_before_replacement(self):
+  rows=[json.loads(x[12:]) for x in (TRACES/'pass_scenario_c.jsonl').read_text().splitlines()]
+  update3=next(i for i,r in enumerate(rows) if r['action']=='desired_generation_update' and r['generation']==3)
+  row=rows.pop(update3);replaced=next(i for i,r in enumerate(rows) if r['action']=='attempt_outcome' and r['result']=='replaced');rows.insert(replaced+1,row)
+  for seq,item in enumerate(rows,1):item['seq']=seq
+  checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0)
+  self.assertIn('scenario C update ordering invalid',checked.stderr)
+ def test_scenario_e_post_success_disconnect_is_not_second_outcome(self):
+  rows=[json.loads(x[12:]) for x in (TRACES/'pass_scenario_e.jsonl').read_text().splitlines()]
+  observation=next(i for i,r in enumerate(rows) if r['action']=='sta_observation_complete')
+  evidence=dict(rows[observation-1],base='WIFI_EVENT',event_id=5,event='sta_disconnected',
+                action='event_observed',result='ok')
+  rows.insert(observation,evidence)
+  for seq,item in enumerate(rows,1):item['seq']=seq
+  checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0)
+  self.assertNotIn('duplicate attempt outcome',checked.stderr)
+  self.assertIn('scenario E disconnected during observation',checked.stderr)
+ def test_final_attempt_result_gates_completion(self):
+  cases={'A':'scenario A second outcome invalid','B':'scenario B replacement generation invalid',
+         'C':'scenario C generation sequence invalid','G':'scenario G replacement owner or generation invalid'}
+  for scenario,reason in cases.items():
+   rows=[json.loads(x[12:]) for x in (TRACES/f'pass_scenario_{scenario.lower()}.jsonl').read_text().splitlines()]
+   final=next(r for r in rows if r['action']=='attempt_outcome' and r['epoch']==2)
+   final.update(base='WIFI_EVENT',event_id=5,event='sta_disconnected',result='failure')
+   checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0,scenario)
+   self.assertIn(reason,checked.stderr,scenario)
+ def test_single_attempt_required_results_remain_valid(self):
+  for scenario in ('e','f'):
+   path=TRACES/f'pass_scenario_{scenario}.jsonl'
+   self.assertEqual(self.run_check(path).returncode,0,path.name)
+ def test_queued_terminal_mode_mismatch_is_rejected(self):
+  rows=[json.loads(x[12:]) for x in (TRACES/'pass_scenario_e.jsonl').read_text().splitlines()]
+  outcome=next(r for r in rows if r['action']=='attempt_outcome')
+  outcome['mode']=1
+  checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0)
+  self.assertIn('physical epoch context changed or ownership overlap',checked.stderr)
 if __name__=='__main__':unittest.main()
