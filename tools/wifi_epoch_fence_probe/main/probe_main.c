@@ -60,12 +60,20 @@ static bool run_finished;
 static const char *scenario_phase = "initial";
 static bool first_epoch = true;
 /* Owner-task-local; never copied into callback-visible physical identity. */
+typedef enum {
+    OUTCOME_NONE,
+    OUTCOME_SUCCESS,
+    OUTCOME_FAILURE,
+    OUTCOME_TIMEOUT,
+    OUTCOME_REPLACED,
+} attempt_outcome_t;
 typedef struct {
     uint64_t epoch;
     uint64_t attempt_id;
-    bool emitted;
+    attempt_outcome_t result;
 } owner_outcome_t;
 static owner_outcome_t owner_outcome;
+static attempt_outcome_t outcome_history[2];
 static unsigned completed_outcomes;
 static uint32_t scenario_milestones;
 static int64_t fence_timestamp_ms;
@@ -154,8 +162,29 @@ static bool scenario_ready(void)
         MILESTONE_API_SUBMISSION | MILESTONE_UPDATE_2,
     };
     unsigned required_epochs = (CONFIG_PROBE_SCENARIO == 5 || CONFIG_PROBE_SCENARIO == 6) ? 1U : 2U;
+    bool results_valid = false;
+    switch (CONFIG_PROBE_SCENARIO) {
+    case 1:
+    case 4:
+        results_valid =
+            (outcome_history[0] == OUTCOME_FAILURE || outcome_history[0] == OUTCOME_TIMEOUT) &&
+            outcome_history[1] == OUTCOME_SUCCESS;
+        break;
+    case 2:
+    case 3:
+    case 7:
+        results_valid = outcome_history[0] == OUTCOME_REPLACED &&
+                        outcome_history[1] == OUTCOME_SUCCESS;
+        break;
+    case 5:
+        results_valid = outcome_history[0] == OUTCOME_SUCCESS;
+        break;
+    case 6:
+        results_valid = outcome_history[0] == OUTCOME_TIMEOUT;
+        break;
+    }
     return epochs_started == required_epochs && completed_outcomes == required_epochs &&
-           owner_outcome.emitted && owner_outcome.epoch != 0 &&
+           owner_outcome.result != OUTCOME_NONE && owner_outcome.epoch != 0 && results_valid &&
            (scenario_milestones & required[CONFIG_PROBE_SCENARIO - 1]) ==
                required[CONFIG_PROBE_SCENARIO - 1];
 }
@@ -163,24 +192,26 @@ static bool scenario_ready(void)
 static bool contexts_equal(physical_context_t left, physical_context_t right)
 {
     return left.epoch == right.epoch && left.attempt_id == right.attempt_id &&
-           left.generation == right.generation && left.owner == right.owner;
+           left.generation == right.generation && left.owner == right.owner &&
+           left.mode == right.mode;
 }
 
 static bool outcome_matches(physical_context_t context)
 {
-    return owner_outcome.emitted && owner_outcome.epoch == context.epoch &&
+    return owner_outcome.result != OUTCOME_NONE && owner_outcome.epoch == context.epoch &&
            owner_outcome.attempt_id == context.attempt_id;
 }
 
-static bool record_outcome(physical_context_t context)
+static bool record_outcome(physical_context_t context, attempt_outcome_t result)
 {
-    if (owner_outcome.emitted || owner_outcome.epoch != context.epoch ||
-        owner_outcome.attempt_id != context.attempt_id) {
+    if (result == OUTCOME_NONE || owner_outcome.result != OUTCOME_NONE ||
+        owner_outcome.epoch != context.epoch || owner_outcome.attempt_id != context.attempt_id ||
+        completed_outcomes >= sizeof(outcome_history) / sizeof(outcome_history[0])) {
         latch_fault(FAULT_CONTEXT);
         return false;
     }
-    owner_outcome.emitted = true;
-    completed_outcomes++;
+    owner_outcome.result = result;
+    outcome_history[completed_outcomes++] = result;
     return true;
 }
 
@@ -426,7 +457,7 @@ static void owner_task(void *arg)
         physical_context_t replaced = active_snapshot();
         trace("owner", "PROBE", 0, "replacement_requested", replaced, 0, "attempt_outcome",
               "replaced");
-        if (!record_outcome(replaced))
+        if (!record_outcome(replaced, OUTCOME_REPLACED))
             return;
         request_stop("replacement_stop");
     }
@@ -518,13 +549,13 @@ static void owner_task(void *arg)
                         scenario_milestones |= MILESTONE_RESPONSE;
                         trace("owner", "PROBE", 0, "attempt_timeout", snapshot, 0,
                               "attempt_outcome", "timeout");
-                        (void) record_outcome(snapshot);
+                        (void) record_outcome(snapshot, OUTCOME_TIMEOUT);
                         trace("owner", "PROBE", 0, "http_response_complete", snapshot, 0,
                               "response_complete", "ok");
                     } else {
                         trace("owner", "PROBE", 0, "attempt_timeout", snapshot, 0,
                               "attempt_outcome", "timeout");
-                        (void) record_outcome(snapshot);
+                        (void) record_outcome(snapshot, OUTCOME_TIMEOUT);
                     }
                     if (CONFIG_PROBE_SCENARIO == 6)
                         scenario_milestones |= MILESTONE_TIMEOUT;
@@ -576,19 +607,24 @@ static void owner_task(void *arg)
         }
         const char *name = event.fence ? "fence_dispatched" : event_name(event.base, event.id);
         const char *outcome = NULL;
-        if (!event.fence && current.state == STATE_ACTIVE && !owner_outcome.emitted) {
+        attempt_outcome_t outcome_result = OUTCOME_NONE;
+        if (!event.fence && current.state == STATE_ACTIVE &&
+            owner_outcome.result == OUTCOME_NONE) {
             bool sta_capable = current.mode == WIFI_MODE_STA || current.mode == WIFI_MODE_APSTA;
             if (event.base == IP_EVENT && event.id == IP_EVENT_STA_GOT_IP && sta_capable) {
                 outcome = "success";
+                outcome_result = OUTCOME_SUCCESS;
                 if (CONFIG_PROBE_SCENARIO == 5)
                     scenario_phase = "candidate_connected";
             } else if (event.base == WIFI_EVENT && event.id == WIFI_EVENT_AP_START &&
                        current.mode == WIFI_MODE_AP && CONFIG_PROBE_SCENARIO == 4 && !first_epoch) {
                 outcome = "success";
+                outcome_result = OUTCOME_SUCCESS;
                 scenario_phase = "ap_observation";
             } else if (event.base == WIFI_EVENT && event.id == WIFI_EVENT_STA_DISCONNECTED &&
                        sta_capable) {
                 outcome = "failure";
+                outcome_result = OUTCOME_FAILURE;
                 if (first_epoch && (CONFIG_PROBE_SCENARIO == 1 || CONFIG_PROBE_SCENARIO == 4))
                     scenario_phase =
                         CONFIG_PROBE_SCENARIO == 4 ? "candidate_failed" : "first_failed";
@@ -598,7 +634,7 @@ static void owner_task(void *arg)
               event.fence ? "fence_observed" : outcome ? "attempt_outcome" : "event_observed",
               outcome ? outcome : "ok");
         if (outcome) {
-            if (!record_outcome(current)) {
+            if (!record_outcome(current, outcome_result)) {
                 continue;
             }
         }

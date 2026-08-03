@@ -109,4 +109,23 @@ class CheckerFixtures(unittest.TestCase):
   checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0)
   self.assertNotIn('duplicate attempt outcome',checked.stderr)
   self.assertIn('scenario E disconnected during observation',checked.stderr)
+ def test_final_attempt_result_gates_completion(self):
+  cases={'A':'scenario A second outcome invalid','B':'scenario B replacement generation invalid',
+         'C':'scenario C generation sequence invalid','G':'scenario G replacement owner or generation invalid'}
+  for scenario,reason in cases.items():
+   rows=[json.loads(x[12:]) for x in (TRACES/f'pass_scenario_{scenario.lower()}.jsonl').read_text().splitlines()]
+   final=next(r for r in rows if r['action']=='attempt_outcome' and r['epoch']==2)
+   final.update(base='WIFI_EVENT',event_id=5,event='sta_disconnected',result='failure')
+   checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0,scenario)
+   self.assertIn(reason,checked.stderr,scenario)
+ def test_single_attempt_required_results_remain_valid(self):
+  for scenario in ('e','f'):
+   path=TRACES/f'pass_scenario_{scenario}.jsonl'
+   self.assertEqual(self.run_check(path).returncode,0,path.name)
+ def test_queued_terminal_mode_mismatch_is_rejected(self):
+  rows=[json.loads(x[12:]) for x in (TRACES/'pass_scenario_e.jsonl').read_text().splitlines()]
+  outcome=next(r for r in rows if r['action']=='attempt_outcome')
+  outcome['mode']=1
+  checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0)
+  self.assertIn('physical epoch context changed or ownership overlap',checked.stderr)
 if __name__=='__main__':unittest.main()
