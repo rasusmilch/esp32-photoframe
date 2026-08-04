@@ -59,6 +59,10 @@ def check_records(lines):
    if r['base']!=eb or r['event_id']!=eid:bad(n,f'{e} raw event mismatch')
   for symbol,(eb,eid,_) in terminal.items():
    if r['base']==eb and r['event_id']==eid and e!=symbol:bad(n,f'{symbol} raw event mismatch')
+  if x and q['active']==ep and not x['stopping'] and not x['fence'] and x['outcome'] is None and e in terminal:
+   _,_,physical_result=terminal[e]
+   attributable=(e in {'got_ip','sta_disconnected'} and x['ctx'][4] in (1,3)) or (e=='ap_start' and x['ctx'][4]==2)
+   if attributable and (a!='attempt_outcome' or r['result']!=physical_result):bad(n,'active terminal event must be attempt outcome')
   if a=='attempt_outcome':
    if r['result'] not in {'success','failure','timeout','replaced'}:bad(n,'invalid attempt outcome result')
    if not x:bad(n,'attempt outcome without started epoch')
@@ -139,7 +143,10 @@ def check_records(lines):
   outcome=lambda ep,result:pos(lambda r:r['action']=='attempt_outcome' and r['epoch']==ep and r['result']==result)
   if s=='A':req(len(starts)==2,'scenario A requires exactly one retry');req(bool(outcome(1,'failure') or outcome(1,'timeout')),'scenario A first outcome invalid');req(bool(outcome(2,'success')),'scenario A second outcome invalid');order([('epoch_start',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('stop_requested',2),('epoch_release',2),('run_complete',None)],'scenario A ordered evidence invalid')
   elif s=='B':order([('epoch_start',1),('desired_generation_update',1),('attempt_outcome',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('attempt_outcome',2),('epoch_release',2)],'scenario B replacement ordering invalid');req(bool(outcome(1,'replaced') and outcome(2,'success')) and len(starts)==2 and starts[1]['generation']==2,'scenario B replacement generation invalid')
-  elif s=='C':order([('epoch_start',1),('desired_generation_update',1),('attempt_outcome',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('attempt_outcome',2)],'scenario C update ordering invalid');ups=[r['generation'] for r in rr if r['action']=='desired_generation_update'];req(ups[:2]==[2,3] and outcome(1,'replaced') and outcome(2,'success') and len(starts)==2 and starts[1]['generation']==3 and all(r['generation']!=2 for r in starts),'scenario C generation sequence invalid')
+  elif s=='C':
+   update2=pos(lambda r:r['action']=='desired_generation_update' and r['epoch']==1 and r['generation']==2);update3=pos(lambda r:r['action']=='desired_generation_update' and r['epoch']==1 and r['generation']==3);replaced=outcome(1,'replaced');stop=pos(lambda r:r['action']=='stop_requested' and r['epoch']==1)
+   req(len(update2)==1 and len(update3)==1 and len(replaced)==1 and len(stop)==1 and update2[0]<update3[0]<replaced[0]<stop[0],'scenario C update ordering invalid')
+   req(bool(outcome(2,'success')) and len(starts)==2 and starts[1]['generation']==3 and all(r['generation']!=2 for r in starts),'scenario C generation sequence invalid')
   elif s=='D':order([('epoch_start',1),('attempt_outcome',1),('response_complete',1),('stop_requested',1),('epoch_release',1),('epoch_start',2),('ap_configured',2),('attempt_outcome',2),('ap_observation_complete',2),('stop_requested',2),('epoch_release',2)],'scenario D ordered evidence invalid');req(bool(outcome(1,'failure') or outcome(1,'timeout')) and bool(outcome(2,'success')),'scenario D outcomes invalid');req(len(starts)==2 and starts[0]['owner']=='portal' and starts[0]['mode']==3 and starts[1]['owner']=='portal' and starts[1]['mode']==2,'scenario D epoch modes invalid')
   elif s=='E':order([('ap_configured',1),('sta_configured',1),('attempt_outcome',1),('persist_simulated',1),('response_complete',1),('set_mode_sta',1),('sta_observation_complete',1),('stop_requested',1),('fence_observed',1),('post_fence_observation_complete',1),('epoch_release',1),('run_complete',None)],'scenario E ordered evidence invalid');req(bool(outcome(1,'success')),'scenario E exact GOT_IP outcome missing');mode=pos(lambda r:r['action']=='set_mode_sta');obs=pos(lambda r:r['action']=='sta_observation_complete');req(not any(r['event']=='sta_disconnected' for r in rr[mode[0]:obs[0]+1]) if mode and obs else False,'scenario E disconnected during observation')
   elif s=='F':order([('epoch_start',1),('attempt_outcome',1),('stop_requested',1),('fence_observed',1),('epoch_release',1)],'scenario F timeout ordering invalid');req(bool(outcome(1,'timeout')) and not any(r['event']=='got_ip' for r in rr),'scenario F connected before timeout')

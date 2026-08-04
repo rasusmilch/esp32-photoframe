@@ -31,10 +31,11 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   15-minute default, saturating deadlines, immutable attempt tokens, qualified connection events,
   and completion/cancellation ordering that prevents replacement overlap. Runtime connectivity
   behavior is unchanged pending integration.
-- Added a standalone ESP-IDF Wi-Fi epoch-fence probe and standard-library trace checker with
-  synthetic invariant fixtures. This is validation tooling only; the proposed barrier is not yet
-  approved and production runtime behavior is unchanged.
-- Hardened epoch-fence validation tooling with synchronized immutable event snapshots, explicit evidence-loss faults, symbolic events, terminal run proof, and strict truncated-trace rejection; no production behavior changed.
-- Added scenario-qualified epoch traces, explicit A–G completion state machines, per-epoch interface evidence, and a validation-only post-fence quiet quarantine with fresh-fault gates; production behavior remains unchanged.
-- Corrected epoch-fence validation tooling with mode-aware stop masks, exactly-one-fence gating, APSTA transition handling, absolute quarantine deadlines, timestamp verification, and ordered scenario phases; production firmware is unchanged.
-- Normalized standalone epoch-fence traces as exact schema 1 with one immutable terminal outcome per physical attempt, compile-time-checked event IDs, exact GOT_IP/disconnect/AP_START evidence, accepted A/D timeout alternatives, and outcome-boundary truncation coverage; production firmware is unchanged and physical acceptance remains pending.
+- Added standalone provisional ESP-IDF Wi-Fi epoch-fence tooling with a standard-library schema-1
+  checker and synthetic A–G validation. It preserves one normalized immutable outcome per physical
+  attempt with exact GOT_IP, STA disconnect, AP_START, timeout, or replacement evidence; verifies
+  synchronized attempt context, exact scenario ordering, mode-aware stop masks, Scenario E APSTA→STA transition evidence, stopping-phase
+  publication before physical stop, one fence, terminal run completion, and a timed quiet quarantine;
+  and rejects
+  stale or demoted terminal evidence. Synthetic host validation passes, but production firmware is
+  unchanged and physical E1002/E1004 acceptance remains pending.
