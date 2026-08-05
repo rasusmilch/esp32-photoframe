@@ -28,7 +28,7 @@ Run `make test-wifi-epoch-trace`, or:
 
     python3 tools/wifi_epoch_fence_probe/check_trace.py capture.log
 
-The checker enforces stable scenario identity, scenario-specific milestones and phase completion, increasing sequence/nondecreasing time, unique IDs, one owner, per-epoch AP/STA configuration, exact stop/fence/quarantine/release ordering and context, symbolic event semantics, no post-fence driver event, no hidden reconnect, no evidence-loss fault, and terminal completion. Synthetic tests require every named negative fixture to fail for its intended reason and deliberately truncate every passing fixture.
+The checker enforces stable scenario identity, scenario-specific milestones and phase completion, increasing sequence/nondecreasing time, unique IDs, one owner, per-epoch AP/STA configuration, exact stop/fence/quarantine/release ordering and context, symbolic event semantics, no post-fence driver event, no hidden reconnect, no evidence-loss fault, and terminal completion. ESP-IDF monitor text may precede the `EPOCH_TRACE ` prefix, and recognized ANSI SGR terminal-control suffixes after one complete JSON object are treated as transport decoration; arbitrary trailing data, duplicate JSON objects, duplicate trace objects on one line, malformed escapes, and corruption inside JSON remain invalid evidence. Raw monitor captures are authoritative and must not be manually cleaned before validation. Synthetic tests require every named negative fixture to fail for its intended reason and deliberately truncate every passing fixture.
 
 ## Later ESP-IDF execution (pending, not run here)
 

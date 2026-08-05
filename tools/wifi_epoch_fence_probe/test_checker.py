@@ -1,13 +1,49 @@
-import copy,json,subprocess,sys,tempfile,unittest
+import copy,importlib.util,json,subprocess,sys,tempfile,unittest
 from pathlib import Path
 ROOT=Path(__file__).parent;CHECK=ROOT/'check_trace.py';TRACES=ROOT/'traces'
+SPEC=importlib.util.spec_from_file_location('check_trace',CHECK)
+check_trace=importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(check_trace)
 class CheckerFixtures(unittest.TestCase):
  def run_check(self,path):return subprocess.run([sys.executable,str(CHECK),str(path)],text=True,capture_output=True)
  def check_rows(self,rows):
+  return self.check_lines(['EPOCH_TRACE '+json.dumps(r) for r in rows])
+ def check_lines(self,lines):
   with tempfile.TemporaryDirectory() as directory:
    path=Path(directory)/'trace.jsonl'
-   path.write_text(''.join('EPOCH_TRACE '+json.dumps(r)+'\n' for r in rows))
+   path.write_text('\n'.join(lines)+'\n')
    return self.run_check(path)
+
+ def test_parser_accepts_terminal_transport_suffixes(self):
+  lines=(TRACES/'pass_scenario_e.jsonl').read_text().splitlines()
+  cases=[
+   lambda l:l,
+   lambda l:l+'\x1b[0m',
+   lambda l:'ESP-IDF text before '+l+'\x1b[0m',
+   lambda l:l+'\x1b[0;32m\x1b[0m',
+   lambda l:l+'   \r\x1b[0m',
+  ]
+  for mutate in cases:
+   mutated=list(lines);mutated[3]=mutate(mutated[3])
+   checked=self.check_lines(mutated)
+   self.assertEqual(checked.returncode,0,checked.stderr)
+ def test_parser_rejects_trailing_or_corrupted_transport_data(self):
+  row=json.loads((TRACES/'pass_scenario_e.jsonl').read_text().splitlines()[0][12:])
+  payload=json.dumps(row)
+  cases=[
+   payload+'garbage',
+   payload+'{}',
+   payload+' EPOCH_TRACE '+payload,
+   payload+'\x1bX',
+   payload+'\x1b[',
+   '{"field":"raw \x1b[0m inside"}',
+   payload[:-1]+'ESP-IDF text}',
+   payload[:-1],
+  ]
+  for bad_payload in cases:
+   with self.assertRaises(json.JSONDecodeError):
+    check_trace.parse_trace_payload(bad_payload)
+
  def test_all_scenarios_and_evidence_stage_truncations(self):
   for path in sorted(TRACES.glob('pass_scenario_*.jsonl')):
    lines=path.read_text().splitlines();rows=[json.loads(x[12:]) for x in lines]

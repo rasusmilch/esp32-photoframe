@@ -37,5 +37,6 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   synchronized attempt context, exact scenario ordering, mode-aware stop masks, Scenario E APSTA→STA transition evidence, stopping-phase
   publication before physical stop, one fence, terminal run completion, and a timed quiet quarantine;
   and rejects
-  stale or demoted terminal evidence. Synthetic host validation passes, but production firmware is
+  stale or demoted terminal evidence, while accepting only recognized ANSI SGR monitor suffixes
+  after one complete trace JSON object. Synthetic host validation passes, but production firmware is
   unchanged and physical E1002/E1004 acceptance remains pending.

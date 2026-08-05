@@ -27,6 +27,8 @@ Every observation records: date; local SHA; branch; board/revision; firmware con
 
 | 2026-08-04 | `be8cec65af66de5bb8544a2702ade7e9c71a3823` / `work` | Scenario E physical-trace producer defects: APSTA→STA stop-mask publication, stopping-phase stop requests, terminal run completion, and esp_timer component dependency | `make test-wifi-epoch-trace`, provisioning-form, Wi-Fi import, connectivity-policy targets, isolated Python syntax compilation, and diff/status checks passed against the named implementation commit | Codex | passed | Host/synthetic validation only. The following docs commit records the row without changing the tested implementation; `idf.py` was unavailable, no ESP-IDF commit was available, `scenario-E-run-1.log` was absent from the checkout, and no E1002 physical rerun was executed. |
 
+| 2026-08-05 | `3c0edf77d3cb64570a3852ba3da7e14067e555c4` / `work` | Transport-aware Wi-Fi epoch trace parsing for recognized ANSI SGR monitor suffixes | `make test-wifi-epoch-trace`, provisioning-form, Wi-Fi import, connectivity-policy targets, isolated Python syntax compilation, unavailable-log check, and diff/status checks passed against the named parser implementation commit | Codex | passed | Host/synthetic validation only. The following docs commit records the row without changing the tested implementation; `scenario-E-run-2.log` was absent from the checkout, so the physical capture was not reclassified as checker-passing here. ESP-IDF build, CI, serial rerun, broader E1002/E1004 physical acceptance, and production lifecycle integration remain pending. |
+
 ### Pending Wi-Fi epoch-fence matrix
 
 - **E1002 first:** scenarios A–G; at least 25 repetitions each for replacement, timeout, APSTA
