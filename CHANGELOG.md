@@ -24,13 +24,20 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   retained committed files recover by deletion without rewriting credentials or restarting.
 - Applied verified imported identity before Wi-Fi initialization in the same boot, and allowed a
   valid file to transactionally repair an incomplete stored SSID/password pair.
+- Replaced blocking/destructive normal Wi-Fi startup with a serialized asynchronous production
+  owner: local controls start without association, transient failure retains credentials and
+  schedules the 15-minute-default retry, and sleep teardown holds ownership through stop evidence,
+  default-loop fence, and quiet quarantine.
+- Routed captive provisioning, candidate association, scans, APSTA→STA, power-save changes, and
+  physical stop through the same owner. Successful candidates persist only after qualified GOT_IP,
+  complete the HTTP response before AP teardown, and become authoritative without reboot.
 
 ### Internal
 
 - Added dependency-free normal-boot and generation-safe serialized retry policies, including a
   15-minute default, saturating deadlines, immutable attempt tokens, qualified connection events,
-  and completion/cancellation ordering that prevents replacement overlap. Runtime connectivity
-  behavior is unchanged pending integration.
+  and completion/cancellation ordering that prevents replacement overlap. The production runtime
+  now consumes this policy; production E1002/E1004 hardware validation remains pending.
 - Added standalone provisional ESP-IDF Wi-Fi epoch-fence tooling with a standard-library schema-1
   checker and synthetic A–G validation. It preserves one normalized immutable outcome per physical
   attempt with exact GOT_IP, STA disconnect, AP_START, timeout, or replacement evidence; verifies

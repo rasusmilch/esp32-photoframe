@@ -25,7 +25,11 @@ failure, success, unavailable credentials, and saturating `uint64_t` arithmetic.
 cover repeated replacement during an outstanding attempt, obsolete success/failure before and
 after polling, immutable/unknown/duplicate tokens, cancellation request versus acknowledgement,
 generation-qualified connection/disconnection, stale disconnects, retry-deadline preservation,
-and proof that no poll reserves a second physical slot. The policy is not runtime validation.
+and proof that no poll reserves a second physical slot. The same target compiles the dependency-free
+`connectivity_lifecycle.c` model under strict C11 warnings and proves exclusive slot ownership,
+mode-mask stop evidence before fence, matching immutable fence identity, quarantine before release,
+stale stop rejection, and fail-closed attributable post-fence activity. These are production-owner
+ordering tests, not ESP-IDF event-loop or hardware validation.
 
 `make test-wifi-epoch-trace` runs the standard-library schema-1 checker against synthetic pass/fail traces. Every physical `epoch_start` must have exactly one immutable active-state `attempt_outcome`—`success`, `failure`, `timeout`, or `replaced`—before stop and release. Driver outcomes require exact raw/symbolic evidence: `IP_EVENT`/0/`got_ip`, `WIFI_EVENT`/5/`sta_disconnected`, or `WIFI_EVENT`/12/`ap_start`; the standalone probe compile-time asserts those ESP-IDF values. Attempt success is not scenario completion.
 

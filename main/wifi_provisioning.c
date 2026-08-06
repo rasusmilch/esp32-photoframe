@@ -12,9 +12,14 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "ha_integration.h"
+#include "http_server.h"
 #include "lwip/ip4_addr.h"
+#include "mdns_service.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "ota_manager.h"
+#include "periodic_tasks.h"
 #include "power_manager.h"
 #include "provisioning_form.h"
 #include "utils.h"
@@ -22,6 +27,31 @@
 
 static const char *TAG = "wifi_prov";
 static httpd_handle_t provisioning_server = NULL;
+
+static void finish_provisioning_services(void *arg)
+{
+    (void) arg;
+    vTaskDelay(pdMS_TO_TICKS(250));
+    dns_server_stop();
+    if (provisioning_server != NULL) {
+        httpd_stop(provisioning_server);
+        provisioning_server = NULL;
+    }
+    esp_err_t error = mdns_service_init();
+    if (error == ESP_OK)
+        error = http_server_init();
+    if (error == ESP_OK)
+        http_server_set_ready();
+    else
+        ESP_LOGE(TAG, "Failed to start normal network services: %s", esp_err_to_name(error));
+    if (error == ESP_OK) {
+        periodic_tasks_check_and_run();
+        ha_notify_online(NULL);
+        vTaskDelay(pdMS_TO_TICKS(10000));
+        ota_check_for_update(NULL, 0);
+    }
+    vTaskDelete(NULL);
+}
 
 _Static_assert(PROVISIONING_SSID_CAPACITY == WIFI_SSID_MAX_LEN, "SSID capacity mismatch");
 _Static_assert(PROVISIONING_PASSWORD_CAPACITY == WIFI_PASS_MAX_LEN, "password capacity mismatch");
@@ -365,60 +395,13 @@ static esp_err_t provision_save_handler(httpd_req_t *req)
         memcpy(candidate.device_name, DEFAULT_DEVICE_NAME, sizeof(DEFAULT_DEVICE_NAME));
     }
 
-    // All body, form, field, mode, and address validation is complete. Side effects start here.
-    if (candidate.use_static_ip) {
-        config_manager_set_static_ip(candidate.static_ip);
-        config_manager_set_static_netmask(candidate.static_netmask);
-        config_manager_set_static_gateway(candidate.static_gateway);
-        config_manager_set_ip_mode(IP_MODE_STATIC);
-    } else {
-        config_manager_set_ip_mode(IP_MODE_DHCP);
-    }
-    config_manager_set_dns_server(candidate.dns_server);
-
     ESP_LOGI(TAG, "Received validated WiFi provisioning request");
     ESP_LOGI(TAG, "Testing WiFi connection in APSTA mode...");
-
-    // Switch to APSTA mode to test connection while keeping AP running
-    esp_wifi_set_mode(WIFI_MODE_APSTA);
-
-    // Configure STA with provided credentials
-    wifi_config_t sta_config = {0};
-    memcpy(sta_config.sta.ssid, candidate.ssid, strlen(candidate.ssid) + 1U);
-    memcpy(sta_config.sta.password, candidate.password, strlen(candidate.password) + 1U);
-    sta_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    sta_config.sta.pmf_cfg.capable = true;
-    sta_config.sta.pmf_cfg.required = false;
-
-    esp_wifi_set_config(WIFI_IF_STA, &sta_config);
-
-    // Apply the just-saved IP configuration (static address or DHCP) so the
-    // connection test exercises it (#43).
-    wifi_manager_apply_ip_config();
-
-    // Disconnect first if already connected
-    esp_wifi_disconnect();
-
-    // Wait a bit for disconnect to complete
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // Try to connect
-    esp_wifi_connect();
-
-    // Wait for connection result (with timeout)
-    EventBits_t bits =
-        xEventGroupWaitBits(wifi_manager_get_event_group(), WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                            pdTRUE,               // Clear bits on exit
-                            pdFALSE,              // Wait for either bit
-                            pdMS_TO_TICKS(15000)  // 15 second timeout
-        );
-
-    if (!(bits & WIFI_CONNECTED_BIT)) {
+    esp_err_t candidate_result = wifi_manager_test_provisioning_candidate(
+        candidate.ssid, candidate.password, candidate.use_static_ip, candidate.static_ip,
+        candidate.static_netmask, candidate.static_gateway, candidate.dns_server, 15000);
+    if (candidate_result != ESP_OK) {
         ESP_LOGW(TAG, "Failed to connect using validated provisioning request");
-
-        // Connection failed - switch back to AP-only mode
-        esp_wifi_disconnect();
-        esp_wifi_set_mode(WIFI_MODE_AP);
 
         const char *error_response =
             "<html><body><h1>WiFi Connection Failed</h1>"
@@ -439,6 +422,17 @@ static esp_err_t provision_save_handler(httpd_req_t *req)
 
     ESP_LOGI(TAG, "WiFi connection successful! Saving credentials...");
 
+    // The candidate is proven before any persistent network setting or credential is changed.
+    if (candidate.use_static_ip) {
+        config_manager_set_static_ip(candidate.static_ip);
+        config_manager_set_static_netmask(candidate.static_netmask);
+        config_manager_set_static_gateway(candidate.static_gateway);
+        config_manager_set_ip_mode(IP_MODE_STATIC);
+    } else {
+        config_manager_set_ip_mode(IP_MODE_DHCP);
+    }
+    config_manager_set_dns_server(candidate.dns_server);
+
     // Connection successful - save credentials
     esp_err_t err = wifi_manager_save_credentials(candidate.ssid, candidate.password);
     if (err != ESP_OK) {
@@ -453,8 +447,25 @@ static esp_err_t provision_save_handler(httpd_req_t *req)
     const char *response =
         "<html><body><h1>WiFi Configured!</h1>"
         "<p>Successfully connected to your WiFi network.</p>"
-        "<p>Device will restart in 3 seconds...</p></body></html>";
-    httpd_resp_send(req, response, strlen(response));
+        "<p>The frame is now connected.</p></body></html>";
+    esp_err_t response_result = httpd_resp_send(req, response, strlen(response));
+    if (response_result != ESP_OK) {
+        ESP_LOGE(TAG, "Provisioning response did not complete; AP remains available");
+        return response_result;
+    }
+
+    // Only after the response is complete may the owner publish STA-only stop
+    // requirements and perform APSTA -> STA.
+    err = wifi_manager_finish_provisioning();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to finish provisioning transition: %s", esp_err_to_name(err));
+        return err;
+    }
+    if (xTaskCreate(finish_provisioning_services, "provision_finish", 4096, NULL, 5, NULL) !=
+        pdPASS) {
+        ESP_LOGE(TAG, "Failed to schedule provisioning service transition");
+        return ESP_ERR_NO_MEM;
+    }
 
     return ESP_OK;
 }
@@ -469,23 +480,9 @@ esp_err_t wifi_provisioning_start_ap(void)
 {
     ESP_LOGI(TAG, "Starting WiFi AP for provisioning");
 
-    // Stop WiFi first
-    esp_wifi_stop();
-
-    // Set WiFi mode to AP
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-
     // Configure WiFi AP with unique SSID
     const char *ap_ssid = get_setup_ap_ssid();
-
-    wifi_config_t wifi_config = {
-        .ap = {.channel = 1, .password = "", .max_connection = 4, .authmode = WIFI_AUTH_OPEN},
-    };
-    strncpy((char *) wifi_config.ap.ssid, ap_ssid, sizeof(wifi_config.ap.ssid));
-    wifi_config.ap.ssid_len = strlen(ap_ssid);
-
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(wifi_manager_start_provisioning_ap(ap_ssid));
 
     // Wait a bit for netif to be created
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -637,7 +634,9 @@ esp_err_t wifi_provisioning_stop_ap(void)
         provisioning_server = NULL;
     }
 
-    esp_wifi_stop();
+    esp_err_t stop_result = wifi_manager_stop(10000);
+    if (stop_result != ESP_OK)
+        return stop_result;
     ESP_LOGI(TAG, "WiFi AP stopped");
 
     return ESP_OK;

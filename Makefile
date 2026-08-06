@@ -116,6 +116,10 @@ test-connectivity-policy:
 		main/connectivity_policy.c host_tests/test_connectivity_policy.c \
 		-o host_tests/build/connectivity_policy_test
 	@./host_tests/build/connectivity_policy_test
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -Imain \
+		main/connectivity_lifecycle.c host_tests/test_connectivity_lifecycle.c \
+		-o host_tests/build/connectivity_lifecycle_test
+	@./host_tests/build/connectivity_lifecycle_test
 
 test-wifi-epoch-trace:
 	@cd tools/wifi_epoch_fence_probe && python3 -m unittest -v test_checker.py
