@@ -29,15 +29,32 @@ Every observation records: date; local SHA; branch; board/revision; firmware con
 
 | 2026-08-05 | `3c0edf77d3cb64570a3852ba3da7e14067e555c4` / `work` | Transport-aware Wi-Fi epoch trace parsing for recognized ANSI SGR monitor suffixes | `make test-wifi-epoch-trace`, provisioning-form, Wi-Fi import, connectivity-policy targets, isolated Python syntax compilation, unavailable-log check, and diff/status checks passed against the named parser implementation commit | Codex | passed | Host/synthetic validation only. The following docs commit records the row without changing the tested implementation; `scenario-E-run-2.log` was absent from the checkout, so the physical capture was not reclassified as checker-passing here. ESP-IDF build, CI, serial rerun, broader E1002/E1004 physical acceptance, and production lifecycle integration remain pending. |
 
+
+## E1002 standalone Wi-Fi epoch-fence physical evidence
+
+External/operator-retained raw monitor logs are the evidence source for these rows; Codex recorded and reconciled the supplied results but did not inspect the raw artifacts. Missing board revision, power source, AP model/firmware, exact AP management configuration, signal conditions, and raw D/G artifact contents remain explicit metadata limitations. Firmware provenance is preserved per capture; Scenario E run 2 used physical firmware captured before the host-only ANSI parser correction.
+
+| Date | Local SHA / branch | Scenario | Expected / observed | Validator | Status | Links / limitations |
+|---|---|---|---|---|---|---|
+| 2026-08-05 | `b532431` firmware / `work` | E1002 Scenario B, `scenario-B-run-1.log` | Operator reported `trace valid: 30 records`; generation 1→2 replacement, generation 1 replaced outcome, generation 2 GOT_IP, stop/fence/quarantine/release/run_complete completed | Operator external physical validation; Codex recorded provenance | passed | ESP-IDF v6.0.2; firmware reported `v2.15.0-15-gb532431`; raw log retained externally; metadata limitations above |
+| 2026-08-05 | `b532431` firmware / `work` | E1002 Scenario C run 1, `scenario-C-run-1.log` | Generation 1→2→3 coalescing and skipped generation 2 behaved correctly, but generation 3 disconnected with reason 4 before GOT_IP; run did not satisfy Scenario C | Operator external physical validation; Codex recorded provenance | failed | Retained environmental failure evidence; unchanged-code rerun passed; ESP-IDF v6.0.2; raw log retained externally; metadata limitations above |
+| 2026-08-05 | `b532431` firmware / `work` | E1002 Scenario C run 2, `scenario-C-run-2.log` | Operator reported `trace valid: 30 records`; generation 1→2→3 observed, generation 2 skipped, generation 1 replaced/fenced, generation 3 GOT_IP/stopped/fenced/quarantined/released/completed | Operator external physical validation; Codex recorded provenance | passed | ESP-IDF v6.0.2; firmware reported `v2.15.0-15-gb532431`; raw log retained externally; metadata limitations above |
+| 2026-08-05 | `b532431` firmware / `work` | E1002 Scenario D, `scenario-D-run-1.log` | Operator reported `trace valid: 34 records`; APSTA failure/recovery path accepted | Operator external physical validation; Codex recorded provenance | passed | ESP-IDF v6.0.2; raw log retained externally but not supplied to Codex; metadata limitations above |
+| 2026-08-05 | pre-fix firmware / `work` | E1002 Scenario E run 1, `scenario-E-run-1.log` | Failed validation capture exposing APSTA→STA stop-mask publication race, stop_requested phase defect, and post-run_complete processing defect | Operator external physical validation; Codex recorded provenance | failed | Retained diagnostic failure evidence; not converted to pass |
+| 2026-08-05 | `0530ec6` firmware / `work` | E1002 Scenario E run 2, `scenario-E-run-2.log` | Operator reported corrected checker accepted `trace valid: 27 records`; physical APSTA association/GOT_IP, required_stop_mask=1 before transition AP_STOP, stopping-phase stop, STA_STOP mask completion, one fence, 2000 ms quarantine, release, terminal run_complete, and no later EPOCH_TRACE | Operator external physical validation; Codex recorded provenance | passed | ESP-IDF v6.0.2; firmware reported `v2.15.0-14-g0530ec6`; raw log retained externally; parser correction did not alter physical firmware execution; metadata limitations above |
+| 2026-08-05 | external firmware / `work` | E1002 Scenario G, `scenario-G-run-1.log` | Operator reported `trace valid: 30 records`; API-driven replacement path accepted | Operator external physical validation; Codex recorded provenance | passed | ESP-IDF v6.0.2; raw log retained externally but not supplied to Codex; metadata limitations above |
+| 2026-08-05 | not executed / `work` | E1002 Scenario A | Controlled first-attempt failure/timeout followed by successful retry was not executed because the current development AP cannot be controlled and no separate AP will be set up solely for this validation | Operator/Codex recorded limitation | environment-limited | Not passed and not failed; remains physical validation debt |
+| 2026-08-05 | not executed / `work` | E1002 Scenario F | Controlled timeout was not executed because the current development AP cannot be controlled and no separate AP will be set up solely for this validation | Operator/Codex recorded limitation | environment-limited | Not passed and not failed; remains physical validation debt |
+
+Gate decision: B/C/D/E/G accepted representative E1002 evidence covers replacement and STA success, rapid generation coalescing and STA success, APSTA failure/recovery, APSTA→STA transition, API-driven replacement, real stop events, mode-aware stop masks, default-event-loop fence dispatch, quiet quarantine, epoch release, and terminal completion. The C run 1 failed STA association correctly prevented completion before an unchanged-code rerun passed. Under DEC-016, this lifts only the standalone epoch-fence prerequisite for beginning production connectivity lifecycle integration. It does not complete full E1002 board/product validation, E1004 validation, release closure, or the unexecuted A/F physical debt.
+
 ### Pending Wi-Fi epoch-fence matrix
 
-- **E1002 first:** scenarios A–G; at least 25 repetitions each for replacement, timeout, APSTA
-  failure, and rapid replacement; zero old post-fence events, overlap, or lost fences.
-- **E1004 second:** repeat the same matrix only after E1002 passes.
-- Record exact ESP-IDF version/commit, probe commit, board revision, power source, AP model/firmware,
-  signal conditions, and retained trace artifacts. Explicitly observe APSTA→STA behavior.
-- Status: **pending**. No ESP-IDF compilation, physical Wi-Fi, APSTA transition, or board result was
-  produced in this environment; arbitrary delays cannot convert failures into passes.
+- **Policy:** one accepted representative physical execution is sufficient for a scenario's required real-driver path. Repeat after failure, anomaly, timing sensitivity, relevant implementation change, or intentionally different environmental conditions; failed runs remain evidence.
+- **E1002 standalone epoch/fence prerequisite:** B/C/D/E/G accepted; A/F environment-limited and still physical debt. This permits beginning production connectivity lifecycle integration.
+- **E1004:** still pending; execute after production integration needs are defined for that board.
+- **Metadata:** future rows must record ESP-IDF version/commit, probe commit, board revision, power source, AP model/firmware, signal conditions, and retained redacted trace artifacts when available.
+- **Boundary:** the gate decision is not full E1002/E1004 board/product validation and does not convert failures into passes.
 
 ## Pending physical matrices
 

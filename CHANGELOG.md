@@ -38,5 +38,8 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   publication before physical stop, one fence, terminal run completion, and a timed quiet quarantine;
   and rejects
   stale or demoted terminal evidence, while accepting only recognized ANSI SGR monitor suffixes
-  after one complete trace JSON object. Synthetic host validation passes, but production firmware is
-  unchanged and physical E1002/E1004 acceptance remains pending.
+  after one complete trace JSON object. Representative E1002 physical validation now accepts
+  B/C/D/E/G, retains failed C/E diagnostic runs, leaves A/F environment-limited, replaces
+  arbitrary repeated identical executions with one accepted run plus diagnostic reruns, and opens
+  the production connectivity integration gate while broader E1002/E1004 hardware validation remains
+  pending.
