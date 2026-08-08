@@ -3,6 +3,8 @@ set(SOURCES
     "cert_pin.c"
     "color_palette.c"
     "connectivity_policy.c"
+    "connectivity_lifecycle.c"
+    "connectivity_runtime.c"
     "config_manager.c"
     "debug_log.c"
     "display_manager.c"

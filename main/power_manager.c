@@ -384,7 +384,11 @@ void power_manager_enter_sleep(void)
     // state and the modem domain transitions through a normal teardown
     // rather than being yanked by the deep-sleep entry. Ignored if WiFi
     // was never started.
-    esp_wifi_stop();
+    esp_err_t wifi_stop_result = wifi_manager_stop(10000);
+    if (wifi_stop_result != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi physical stop/fence did not complete; refusing unsafe sleep");
+        return;
+    }
 
     ESP_LOGI(TAG, "Configuring Board HAL for deep sleep");
     board_hal_prepare_for_sleep();

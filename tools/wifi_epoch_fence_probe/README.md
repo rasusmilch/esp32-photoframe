@@ -28,9 +28,9 @@ Run `make test-wifi-epoch-trace`, or:
 
     python3 tools/wifi_epoch_fence_probe/check_trace.py capture.log
 
-The checker enforces stable scenario identity, scenario-specific milestones and phase completion, increasing sequence/nondecreasing time, unique IDs, one owner, per-epoch AP/STA configuration, exact stop/fence/quarantine/release ordering and context, symbolic event semantics, no post-fence driver event, no hidden reconnect, no evidence-loss fault, and terminal completion. Synthetic tests require every named negative fixture to fail for its intended reason and deliberately truncate every passing fixture.
+The checker enforces stable scenario identity, scenario-specific milestones and phase completion, increasing sequence/nondecreasing time, unique IDs, one owner, per-epoch AP/STA configuration, exact stop/fence/quarantine/release ordering and context, symbolic event semantics, no post-fence driver event, no hidden reconnect, no evidence-loss fault, and terminal completion. ESP-IDF monitor text may precede the `EPOCH_TRACE ` prefix, and recognized ANSI SGR terminal-control suffixes after one complete JSON object are treated as transport decoration; arbitrary trailing data, duplicate JSON objects, duplicate trace objects on one line, malformed escapes, and corruption inside JSON remain invalid evidence. Raw monitor captures are authoritative and must not be manually cleaned before validation. Synthetic tests require every named negative fixture to fail for its intended reason and deliberately truncate every passing fixture.
 
-## Later ESP-IDF execution (pending, not run here)
+## ESP-IDF execution
 
 Use the repository-supported ESP-IDF v6.0 family or the exact version later pinned for firmware.
 Record `idf.py --version` and the ESP-IDF git commit. Starting with E1002, then E1004:
@@ -45,13 +45,8 @@ Select the scenario, test-only AP SSID, and password in “Wi-Fi epoch fence pro
 an unredacted general monitor log. For every artifact record board/revision, power source, AP model
 and firmware, signal conditions, scenario, IDF version/commit, probe commit, and result.
 
-## Required evidence before runtime integration resumes
+## Physical validation policy
 
-- E1002: every scenario passes; replacement, timeout, APSTA failure, and rapid replacement each
-  pass at least 25 repetitions; no post-fence old event, overlap, or lost fence.
-- E1004: repeat the same matrix only after E1002 passes.
-- Retain all traces and explicitly record APSTA→STA behavior.
-- Failures remain failures; arbitrary delays are not an acceptable explanation or barrier.
+One accepted physical execution establishes that scenario's required real-driver path for this standalone probe. Repeat a scenario after a failed run, anomaly, timing-sensitive finding, relevant implementation change, or intentionally different environment; failed runs remain retained evidence. Synthetic host tests remain responsible for exhaustive deterministic permutations and negative cases.
 
-Only those physical results may promote the stop/STA_STOP/default-loop-fence sequence from a
-proposal to a runtime contract.
+Representative E1002 evidence for B, C, D, E, and G opens the production connectivity lifecycle integration prerequisite for this epoch/fence model. A and F remain environment-limited because the current AP cannot provide controlled first-attempt failure/timeout conditions, and they must not be marked hardware-passed until executed. This does not close full E1002 board validation, E1004 validation, or release validation.

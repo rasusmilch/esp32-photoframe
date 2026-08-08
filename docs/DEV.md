@@ -57,8 +57,15 @@ cd ..
 
 The script automatically:
 1. Builds the frontend webapp (`webapp/`)
-2. Sets the correct `sdkconfig.defaults` for the selected board
-3. Runs `idf.py build` OR `idf.py build` with correct options
+2. Selects the project target (`esp32s3`) in both the ESP-IDF command and subprocess environment
+3. Sets the correct `sdkconfig.defaults` for the selected board
+4. Runs `idf.py build` with the forwarded build/post-build options
+
+All currently supported boards are ESP32-S3 products. If the invoking shell contains a different
+`IDF_TARGET`, `build.py` reports and overrides that stale value; a conflicting caller
+`-DIDF_TARGET=...` is likewise ignored so it cannot create contradictory target definitions.
+`--fullclean` removes the generated `sdkconfig`, `partitions.csv`, and `build/` before the selected
+steps; it does not invoke `idf.py set-target` or `idf.py fullclean`.
 
 ### 3. Flash and Monitor
 

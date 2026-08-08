@@ -18,10 +18,14 @@ esp_err_t wifi_manager_update_hostname(void);
 // and modem power save (WIFI_PS_MIN_MODEM). Idempotent; safe to call every
 // second. The policy for when to use which lives in power_manager.
 esp_err_t wifi_manager_set_performance_mode(bool enable);
+// Zero selects the governed 15-minute default; nonzero values configure retry scheduling.
+void wifi_manager_set_retry_interval(uint64_t interval_ms);
 // Apply the configured IP mode to the STA netif (static address or DHCP).
 // Called automatically by wifi_manager_connect; exposed for the provisioning
 // connection test, which drives esp_wifi directly (#43).
 esp_err_t wifi_manager_apply_ip_config(void);
+// Queue a normal connection attempt and return without waiting for association.
+esp_err_t wifi_manager_connect_async(const char *ssid, const char *password);
 esp_err_t wifi_manager_connect(const char *ssid, const char *password);
 esp_err_t wifi_manager_disconnect(void);
 bool wifi_manager_is_connected(void);
@@ -31,5 +35,12 @@ esp_err_t wifi_manager_load_credentials(char *ssid, char *password);
 esp_err_t wifi_manager_load_credentials_from_sdcard(char *ssid, char *password);
 EventGroupHandle_t wifi_manager_get_event_group(void);
 int wifi_manager_scan(wifi_ap_record_t *results, int max_results);
+esp_err_t wifi_manager_start_provisioning_ap(const char *ssid);
+esp_err_t wifi_manager_test_provisioning_candidate(const char *ssid, const char *password,
+                                                   bool use_static_ip, const char *static_ip,
+                                                   const char *netmask, const char *gateway,
+                                                   const char *dns, uint32_t timeout_ms);
+esp_err_t wifi_manager_finish_provisioning(void);
+esp_err_t wifi_manager_stop(uint32_t timeout_ms);
 
 #endif
