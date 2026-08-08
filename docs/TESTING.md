@@ -14,6 +14,12 @@ Every normative requirement needs a host test, build/review check, or hardware-v
 
 Current host CMake tests cover cron and wake scheduling, while `make test` also runs CLI orientation tests. `make test-provisioning-form` is self-contained and compiles the pure provisioning module with C11, `-Wall`, `-Wextra`, `-Werror`, and `-pedantic`; the aggregate test target invokes it before dependency-fetching tests. It covers exact/partial reads, EOF/errors/bounded timeouts and sentinels, form ordering and unknown fields, strict escapes/forbidden bytes, duplicates, presence versus emptiness, every destination overflow, IP-mode requirements, the decoded 63/64-byte password boundary, and the derived 758-byte body boundary. Remaining adopted scenarios stay pending unless `docs/VALIDATION.md` records observation.
 
+`make test-build-helper` is a dependency-free standard-library Python test run first by `make test`.
+It mocks ESP-IDF subprocesses and uses temporary directories to verify explicit `esp32s3` command
+and environment selection, stale ambient/caller target handling, all supported board overlays,
+debug and arbitrary `-D` forwarding, post-build arguments, and scoped `--fullclean` deletion. This
+proves command construction only; it is not ESP-IDF compilation or hardware validation.
+
 `make test-wifi-import` is also self-contained and runs before dependency-fetching tests. It covers LF/CRLF positional parsing, empty passwords and optional names, exact/overflow capacities and the 169-byte file ceiling, embedded/structural/excess input, both-path discovery and precedence, source failures, first/replacement/already-applied imports, optional-name preservation, both incomplete credential-pair forms and repair, pre-commit load failure versus post-commit verification failure, simulated commit/readback failures and mismatches, exact-path deletion, deletion-failure recovery without a repeated commit, call ordering, and cache publication only after verification.
 
 `make test-connectivity-policy` is dependency-free and runs third, before downloaded test paths. Its
