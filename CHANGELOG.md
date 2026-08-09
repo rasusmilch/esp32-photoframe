@@ -37,6 +37,10 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
 
 ### Internal
 
+- Added a dependency-free semantic button classifier and strict host coverage for stable-time
+  debounce, injected short/long timing, held-wake suppression, independent controls, unavailable
+  controls, and exactly-once refresh/clear/previous/next events. It is not wired into firmware, and
+  no production long-clear threshold or hardware behavior changed.
 - Added dependency-free normal-boot and generation-safe serialized retry policies, including a
   15-minute default, saturating deadlines, immutable attempt tokens, qualified connection events,
   and completion/cancellation ordering that prevents replacement overlap. The production runtime

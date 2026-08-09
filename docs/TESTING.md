@@ -14,6 +14,14 @@ Every normative requirement needs a host test, build/review check, or hardware-v
 
 Current host CMake tests cover cron and wake scheduling, while `make test` also runs CLI orientation tests. `make test-provisioning-form` is self-contained and compiles the pure provisioning module with C11, `-Wall`, `-Wextra`, `-Werror`, and `-pedantic`; the aggregate test target invokes it before dependency-fetching tests. It covers exact/partial reads, EOF/errors/bounded timeouts and sentinels, form ordering and unknown fields, strict escapes/forbidden bytes, duplicates, presence versus emptiness, every destination overflow, IP-mode requirements, the decoded 63/64-byte password boundary, and the derived 758-byte body boundary. Remaining adopted scenarios stay pending unless `docs/VALIDATION.md` records observation.
 
+`make test-semantic-controls` is a dependency-free strict C11 test of the pure semantic button
+classifier. It covers configuration rejection, exact stable-time debounce and long-press boundaries,
+noisy press/release samples, refresh versus exactly-once clear, previous/next without hold repeats,
+held-at-wake suppression through release, independent simultaneous controls, unavailable controls,
+and unsigned timestamp wrap. Thresholds are injected test fixtures rather than product policy. The
+classifier is not connected to GPIO, board mappings, wake handling, or production actions; firmware
+integration and hardware validation remain pending.
+
 `make test-build-helper` is a dependency-free standard-library Python test run first by `make test`.
 It mocks ESP-IDF subprocesses and uses temporary directories to verify explicit `esp32s3` command
 and environment selection, stale ambient/caller target handling, all supported board overlays,

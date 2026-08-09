@@ -1,4 +1,4 @@
-.PHONY: format format-check format-diff test test-build-helper test-provisioning-form test-wifi-import test-connectivity-policy test-wifi-epoch-trace help install-hooks
+.PHONY: format format-check format-diff test test-build-helper test-semantic-controls test-provisioning-form test-wifi-import test-connectivity-policy test-wifi-epoch-trace help install-hooks
 
 # Use clang-format-18 for consistency with CI
 # On macOS: brew install llvm@18 && brew link llvm@18
@@ -22,6 +22,7 @@ help:
 	@echo "  format-diff   - Show what would change without modifying files"
 	@echo "  test          - Build and run unit tests (requires ESP-IDF environment)"
 	@echo "  test-build-helper - Run dependency-free build.py target-selection tests"
+	@echo "  test-semantic-controls - Run dependency-free semantic button classifier tests"
 	@echo "  test-provisioning-form - Run dependency-free provisioning boundary tests"
 	@echo "  test-wifi-import - Run dependency-free wifi.txt import tests"
 	@echo "  test-connectivity-policy - Run dependency-free boot/retry policy tests"
@@ -82,6 +83,7 @@ format-diff:
 
 test:
 	@$(MAKE) test-build-helper
+	@$(MAKE) test-semantic-controls
 	@$(MAKE) test-provisioning-form
 	@$(MAKE) test-wifi-import
 	@$(MAKE) test-connectivity-policy
@@ -100,6 +102,13 @@ test:
 
 test-build-helper:
 	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v host_tests/test_build_helper.py
+
+test-semantic-controls:
+	@mkdir -p host_tests/build
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -Imain \
+		main/semantic_button.c host_tests/test_semantic_button.c \
+		-o host_tests/build/semantic_button_test
+	@./host_tests/build/semantic_button_test
 
 test-provisioning-form:
 	@mkdir -p host_tests/build
