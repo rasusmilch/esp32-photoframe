@@ -10,6 +10,7 @@
 #include "color_palette.h"
 #include "config.h"
 #include "config_manager.h"
+#include "connectivity_policy.h"
 #include "debug_log.h"
 #include "display_manager.h"
 #include "driver/gpio.h"
@@ -226,6 +227,23 @@ static void button_task(void *arg)
 
         vTaskDelay(pdMS_TO_TICKS(50));
     }
+}
+
+static void network_services_task(void *arg)
+{
+    (void) arg;
+    while (!wifi_manager_is_connected())
+        vTaskDelay(pdMS_TO_TICKS(250));
+
+    ESP_LOGI(TAG, "WiFi connected; starting connection-dependent services");
+    periodic_tasks_check_and_run();
+    esp_err_t mdns_result = mdns_service_init();
+    if (mdns_result != ESP_OK)
+        ESP_LOGE(TAG, "mDNS initialization failed: %s", esp_err_to_name(mdns_result));
+    ha_notify_online(NULL);
+    vTaskDelay(pdMS_TO_TICKS(10000));
+    ota_check_for_update(NULL, 0);
+    vTaskDelete(NULL);
 }
 
 // Bring up mDNS + the HTTP config server exactly once per wake. Idempotent so
@@ -605,7 +623,19 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_manager_init());
     ESP_ERROR_CHECK(wifi_provisioning_init());
 
-    if (!wifi_provisioning_is_provisioned()) {
+    bool have_credentials = wifi_provisioning_is_provisioned();
+    boot_policy_input_t boot_input = {
+        .mode = config_manager_get_rotation_mode() == ROTATION_MODE_URL ? CONNECTIVITY_MODE_URL
+                                                                        : CONNECTIVITY_MODE_STORAGE,
+        .credentials =
+            have_credentials ? CONNECTIVITY_CREDENTIALS_COMPLETE : CONNECTIVITY_CREDENTIALS_ABSENT,
+        .has_usable_persistent_storage = storage_has_persistent_storage(),
+        .has_valid_retained_display = true,
+        .normal_startup = true,
+    };
+    boot_policy_result_t boot_decision = boot_policy_decide(&boot_input);
+    bool provisioning_mode = boot_decision.provisioning == BOOT_PROVISIONING_ELIGIBLE_ASYNC;
+    if (provisioning_mode) {
         ESP_LOGI(TAG, "===========================================");
         ESP_LOGI(TAG, "No WiFi credentials found - Starting AP mode");
         ESP_LOGI(TAG, "===========================================");
@@ -633,50 +663,29 @@ void app_main(void)
 
         ESP_ERROR_CHECK(wifi_provisioning_start_ap());
 
-        while (!wifi_provisioning_is_provisioned()) {
-            vTaskDelay(pdMS_TO_TICKS(1000));
+        ESP_LOGI(TAG, "Provisioning is available asynchronously; local controls remain active");
+    } else if (boot_decision.connection == BOOT_CONNECTION_ELIGIBLE_ASYNC) {
+        char wifi_ssid[WIFI_SSID_MAX_LEN] = {0};
+        char wifi_password[WIFI_PASS_MAX_LEN] = {0};
+        if (wifi_manager_load_credentials(wifi_ssid, wifi_password) == ESP_OK) {
+            ESP_LOGI(TAG, "Scheduling asynchronous WiFi connection");
+            ESP_ERROR_CHECK(wifi_manager_connect_async(wifi_ssid, wifi_password));
         }
-
-        // Set flag to show setup-complete screen after restart
-        nvs_handle_t nvs_handle;
-        if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
-            nvs_set_u8(nvs_handle, NVS_SETUP_COMPLETE_KEY, 1);
-            nvs_commit(nvs_handle);
-            nvs_close(nvs_handle);
-        }
-
-        ESP_LOGI(TAG, "WiFi credentials saved! Restarting...");
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        esp_restart();
+        if (boot_decision.network == BOOT_NETWORK_REQUIRED)
+            ESP_LOGI(TAG, "URL mode remains network-dependent while connection proceeds");
     }
 
-    if (connect_to_wifi_with_timeout(30)) {
-        // Check and run periodic tasks (OTA check, SNTP sync if due)
-        // Note: If RTC was invalid at boot, sntp_sync was already forced via
-        // periodic_tasks_force_run()
-        ESP_LOGI(TAG, "Checking periodic tasks...");
-        periodic_tasks_check_and_run();
-
-        // Start mDNS service
-        ESP_ERROR_CHECK(mdns_service_init());
-    } else {
-        ESP_LOGW(TAG, "Failed to connect to WiFi - clearing credentials");
-        nvs_handle_t nvs_handle;
-        if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
-            nvs_erase_key(nvs_handle, NVS_WIFI_SSID_KEY);
-            nvs_erase_key(nvs_handle, NVS_WIFI_PASS_KEY);
-            nvs_commit(nvs_handle);
-            nvs_close(nvs_handle);
-        }
-        ESP_LOGI(TAG, "Restarting to enter provisioning mode...");
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        esp_restart();
+    if (!provisioning_mode) {
+        ESP_LOGI(TAG, "WiFi connection is asynchronous; local startup continues");
     }
 
     xTaskCreate(button_task, "button_task", 8192, NULL, 5, NULL);
 
-    ESP_ERROR_CHECK(http_server_init());
-    http_server_set_ready();
+    if (!provisioning_mode) {
+        ESP_ERROR_CHECK(http_server_init());
+        http_server_set_ready();
+        xTaskCreate(network_services_task, "network_services", 6144, NULL, 4, NULL);
+    }
 
     if (wifi_manager_is_connected()) {
         char ip_str[16];
@@ -707,15 +716,5 @@ void app_main(void)
         }
     }
 
-    // Notify HA that device is online (HA will poll for all data via REST API).
-    // This is the always-on / cold-boot path, so the rotation-gate response
-    // isn't used here.
-    ESP_LOGI(TAG, "Sending online notification to Home Assistant");
-    ha_notify_online(NULL);
-
     ESP_LOGI(TAG, "PhotoFrame started successfully");
-
-    // Delay OTA check to avoid competing with boot-time network activity
-    vTaskDelay(pdMS_TO_TICKS(10000));
-    ota_check_for_update(NULL, 0);
 }

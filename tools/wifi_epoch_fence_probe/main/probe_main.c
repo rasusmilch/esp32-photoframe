@@ -420,6 +420,7 @@ static void request_stop(const char *cause)
         latch_fault(FAULT_CONTEXT);
         return;
     }
+    scenario_phase = "stopping";
     current.state = STATE_STOPPING;
     current.observed_stop_mask = 0;
     current.fence_posted = false;
@@ -507,6 +508,7 @@ static void owner_task(void *arg)
                         trace("owner", "PROBE", 0, "run_complete", (physical_context_t) {0}, 0,
                               "run_complete", "ok");
                         run_finished = true;
+                        vTaskDelete(NULL);
                     } else if (!scenario_ready()) {
                         latch_fault(FAULT_CONTEXT);
                     }
@@ -673,11 +675,9 @@ static void owner_task(void *arg)
             scenario_milestones |= MILESTONE_GOT_IP | MILESTONE_PERSIST | MILESTONE_RESPONSE;
             trace("owner", "PROBE", 0, "http_response_complete", current, 0, "response_complete",
                   "ok");
+            current.required_stop_mask = STOP_MASK_STA;
+            active_store(current);
             esp_err_t result = esp_wifi_set_mode(WIFI_MODE_STA);
-            if (result == ESP_OK) {
-                current.required_stop_mask = STOP_MASK_STA;
-                active_store(current);
-            }
             trace("owner", "PROBE", 0, "apsta_to_sta", current, 0, "set_mode_sta",
                   result == ESP_OK ? "ok" : "failed");
             if (result != ESP_OK)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Validate scenario-qualified Wi-Fi epoch-fence JSON-lines traces."""
-import argparse,json,sys
+import argparse,json,re,sys
 from pathlib import Path
 PREFIX='EPOCH_TRACE '
 REQUIRED={'trace_schema_version','run','scenario','scenario_phase','post_fence_observe_ms','seq','ts_ms','source','base','event_id','event','epoch','attempt_id','generation','owner','state','mode','required_stop_mask','observed_stop_mask','fence_ts_ms','quarantine_deadline_ms','reason','action','result'}
@@ -17,12 +17,22 @@ PHASES={
 'F':{'first_attempt','attempt_timeout','stopping','post_fence_observation','post_fence_complete','terminal'},
 'G':{'first_attempt','replacement_pending','stopping','post_fence_observation','post_fence_complete','second_attempt','terminal'}}
 
+ANSI_SGR_SUFFIX=re.compile(r'(?:[ \t\r\n]|\x1b\[[0-9;]*m)*\Z')
+DECODER=json.JSONDecoder()
+
+def parse_trace_payload(payload):
+ r,end=DECODER.raw_decode(payload)
+ suffix=payload[end:]
+ if not ANSI_SGR_SUFFIX.fullmatch(suffix):
+  raise json.JSONDecodeError('trailing data after JSON object',payload,end)
+ return r
+
 def check_records(lines):
  failures=[];runs={};count=0
  def bad(n,m):failures.append((n,m))
  for n,line in enumerate(lines,1):
   if PREFIX not in line:continue
-  try:r=json.loads(line.split(PREFIX,1)[1])
+  try:r=parse_trace_payload(line.split(PREFIX,1)[1])
   except json.JSONDecodeError as e:bad(n,f'invalid JSON: {e.msg}');continue
   count+=1;miss=REQUIRED-r.keys()
   if FORBIDDEN & {str(k).lower() for k in r}:bad(n,'secret fields present')

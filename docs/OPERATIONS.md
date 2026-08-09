@@ -6,7 +6,7 @@ This guide distinguishes **current behavior** at the adoption snapshot from **ac
 
 Prepare enabled albums under `/storage/images`; the firmware creates/uses a default album through its album manager. Local discovery currently accepts BMP, PNG, and EPDGZ. Direct SD JPEG discovery is deferred: use the web upload processor or `process-cli` conversion workflow.
 
-**Current limitation:** timer/rotate deep-sleep storage paths can rotate without Wi-Fi, but normal cold boot currently waits for provisioning or a successful connection; ordinary button handling also starts after Wi-Fi success. **Accepted target:** cold boot, retained display, scheduled rotation, refresh/previous/next, and recovery controls continue without Wi-Fi. Network retry runs serialized in the background every 15 minutes by default and must not replace valid displayed content.
+Normal cold boot starts local controls and storage-capable operation without waiting for Wi-Fi association. With complete credentials, the serialized connectivity owner attempts STA connection asynchronously; URL mode remains network-dependent for new downloads. With absent credentials, captive provisioning remains available while local controls continue. Network retry is serialized in the background every 15 minutes by default and does not replace valid displayed content.
 
 ## Captive portal
 
@@ -29,7 +29,7 @@ Malformed, incomplete, unreadable, oversized, uncommitted, or unverifiable candi
 
 ## Unavailable or changed access point
 
-**Current limitation:** normal startup currently clears credentials and restarts after a failed connection. **Accepted target:** retain last-known-good credentials, do not repeatedly restart, keep local operation/buttons active, serialize retry attempts, and retry at the configurable interval (15 minutes default). Credential replacement is an explicit operator action through a successfully validated portal/import; transient failure is not replacement.
+Normal connection failure retains last-known-good credentials, does not restart, keeps local operation/buttons active, and schedules a serialized retry at the configurable interval (15 minutes default). Credential replacement is an explicit operator action through a successfully validated portal/import; transient failure is not replacement. Provisioning tests candidates in APSTA, persists only a successful candidate, completes the HTTP response before APSTA→STA, and does not require reboot.
 
 Factory reset is deliberately destructive and erases persistent configuration. Use the documented `idf.py erase-flash` only when that outcome is intended; see `docs/DEV.md`. Automatic recovery must never be described as factory reset.
 

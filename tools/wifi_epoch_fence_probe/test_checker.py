@@ -1,13 +1,49 @@
-import copy,json,subprocess,sys,tempfile,unittest
+import copy,importlib.util,json,subprocess,sys,tempfile,unittest
 from pathlib import Path
 ROOT=Path(__file__).parent;CHECK=ROOT/'check_trace.py';TRACES=ROOT/'traces'
+SPEC=importlib.util.spec_from_file_location('check_trace',CHECK)
+check_trace=importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(check_trace)
 class CheckerFixtures(unittest.TestCase):
  def run_check(self,path):return subprocess.run([sys.executable,str(CHECK),str(path)],text=True,capture_output=True)
  def check_rows(self,rows):
+  return self.check_lines(['EPOCH_TRACE '+json.dumps(r) for r in rows])
+ def check_lines(self,lines):
   with tempfile.TemporaryDirectory() as directory:
    path=Path(directory)/'trace.jsonl'
-   path.write_text(''.join('EPOCH_TRACE '+json.dumps(r)+'\n' for r in rows))
+   path.write_text('\n'.join(lines)+'\n')
    return self.run_check(path)
+
+ def test_parser_accepts_terminal_transport_suffixes(self):
+  lines=(TRACES/'pass_scenario_e.jsonl').read_text().splitlines()
+  cases=[
+   lambda l:l,
+   lambda l:l+'\x1b[0m',
+   lambda l:'ESP-IDF text before '+l+'\x1b[0m',
+   lambda l:l+'\x1b[0;32m\x1b[0m',
+   lambda l:l+'   \r\x1b[0m',
+  ]
+  for mutate in cases:
+   mutated=list(lines);mutated[3]=mutate(mutated[3])
+   checked=self.check_lines(mutated)
+   self.assertEqual(checked.returncode,0,checked.stderr)
+ def test_parser_rejects_trailing_or_corrupted_transport_data(self):
+  row=json.loads((TRACES/'pass_scenario_e.jsonl').read_text().splitlines()[0][12:])
+  payload=json.dumps(row)
+  cases=[
+   payload+'garbage',
+   payload+'{}',
+   payload+' EPOCH_TRACE '+payload,
+   payload+'\x1bX',
+   payload+'\x1b[',
+   '{"field":"raw \x1b[0m inside"}',
+   payload[:-1]+'ESP-IDF text}',
+   payload[:-1],
+  ]
+  for bad_payload in cases:
+   with self.assertRaises(json.JSONDecodeError):
+    check_trace.parse_trace_payload(bad_payload)
+
  def test_all_scenarios_and_evidence_stage_truncations(self):
   for path in sorted(TRACES.glob('pass_scenario_*.jsonl')):
    lines=path.read_text().splitlines();rows=[json.loads(x[12:]) for x in lines]
@@ -109,6 +145,33 @@ class CheckerFixtures(unittest.TestCase):
   checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0)
   self.assertNotIn('duplicate attempt outcome',checked.stderr)
   self.assertIn('scenario E disconnected during observation',checked.stderr)
+
+ def test_scenario_e_transition_contract_rejects_physical_defects(self):
+  base=[json.loads(x[12:]) for x in (TRACES/'pass_scenario_e.jsonl').read_text().splitlines()]
+  cases=[]
+  def add(name,mutate,reason):
+   rows=copy.deepcopy(base);mutate(rows);cases.append((name,rows,reason))
+  add('transition ap_stop stale mask',
+      lambda r: next(row for row in r if row['event']=='ap_stop').__setitem__('required_stop_mask',3),
+      'required stop mask changed unexpectedly')
+  add('stop_requested before stopping phase',
+      lambda r: next(row for row in r if row['action']=='stop_requested').__setitem__('scenario_phase','sta_observation_complete'),
+      'action inconsistent with scenario phase')
+  add('record after run_complete',
+      lambda r: r.append(dict(r[-1],seq=r[-1]['seq']+1,ts_ms=r[-1]['ts_ms']+100000,base='IP_EVENT',
+                              event_id=7,event='lost_ip',action='event_observed',result='ok')),
+      'trace record after run_complete')
+  add('ap_stop cannot satisfy final stop',
+      lambda r: [row.update(event='ap_stop',event_id=14,observed_stop_mask=0) for row in r if row['event']=='sta_stop'],
+      'stop event does not apply to requested mode')
+  for name,rows,reason in cases:
+   checked=self.check_rows(rows);self.assertNotEqual(checked.returncode,0,name)
+   self.assertIn(reason,checked.stderr,name)
+ def test_probe_cmake_declares_esp_timer_dependency(self):
+  cmake=(ROOT/'main'/'CMakeLists.txt').read_text()
+  self.assertIn('PRIV_REQUIRES',cmake)
+  self.assertIn('esp_timer',cmake)
+
  def test_final_attempt_result_gates_completion(self):
   cases={'A':'scenario A second outcome invalid','B':'scenario B replacement generation invalid',
          'C':'scenario C generation sequence invalid','G':'scenario G replacement owner or generation invalid'}

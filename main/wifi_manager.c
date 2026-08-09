@@ -4,6 +4,7 @@
 
 #include "config.h"
 #include "config_manager.h"
+#include "connectivity_runtime.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -25,47 +26,7 @@ static const char *TAG = "wifi_manager";
 #define WIFI_FAIL_BIT BIT1
 
 static EventGroupHandle_t s_wifi_event_group;
-static int s_retry_num = 0;
-static bool s_is_connected = false;
 static esp_netif_t *s_sta_netif = NULL;
-
-static void apply_dns_override(void);
-
-static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
-                          void *event_data)
-{
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
-        // Bring up an IPv6 link-local address so mDNS can answer AAAA queries.
-        // Without one the responder stays silent on AAAA, and clients resolving
-        // <name>.local wait out their full resolver timeout (~5s per request)
-        // before falling back to the A record.
-        esp_netif_create_ip6_linklocal(s_sta_netif);
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < 5) {
-            esp_wifi_connect();
-            s_retry_num++;
-            ESP_LOGI(TAG, "retry to connect to the AP");
-        } else {
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-        }
-        s_is_connected = false;
-        ESP_LOGI(TAG, "connect to the AP fail");
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
-        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        // Applied after the address is up so it overrides DHCP-provided DNS
-        // servers too (#43).
-        apply_dns_override();
-        s_retry_num = 0;
-        s_is_connected = true;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_GOT_IP6) {
-        ip_event_got_ip6_t *event = (ip_event_got_ip6_t *) event_data;
-        ESP_LOGI(TAG, "got ip6:" IPV6STR, IPV62STR(event->ip6_info.ip));
-    }
-}
 
 esp_err_t wifi_manager_set_performance_mode(bool enable)
 {
@@ -81,7 +42,7 @@ esp_err_t wifi_manager_set_performance_mode(bool enable)
         return ESP_OK;
     }
 
-    esp_err_t err = esp_wifi_set_ps(enable ? WIFI_PS_NONE : WIFI_PS_MIN_MODEM);
+    esp_err_t err = connectivity_runtime_set_power_save(enable ? WIFI_PS_NONE : WIFI_PS_MIN_MODEM);
     if (err == ESP_OK) {
         applied = true;
         current = enable;
@@ -89,6 +50,11 @@ esp_err_t wifi_manager_set_performance_mode(bool enable)
                  enable ? "performance" : "power-save");
     }
     return err;
+}
+
+void wifi_manager_set_retry_interval(uint64_t interval_ms)
+{
+    connectivity_runtime_set_retry_interval(interval_ms);
 }
 
 esp_err_t wifi_manager_update_hostname(void)
@@ -126,19 +92,7 @@ esp_err_t wifi_manager_init(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    esp_event_handler_instance_t instance_got_ip6;
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                                        &event_handler, NULL, &instance_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                                        &event_handler, NULL, &instance_got_ip));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_GOT_IP6, &event_handler,
-                                                        NULL, &instance_got_ip6));
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    // Don't start WiFi here - let wifi_manager_connect() or wifi_provisioning_start_ap() start it
-    // ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(connectivity_runtime_init());
 
     ESP_LOGI(TAG, "wifi_manager_init finished.");
 
@@ -175,29 +129,6 @@ esp_err_t wifi_manager_apply_ip_config(void)
     return ESP_OK;
 }
 
-// Apply the DNS override (if configured). Called after GOT_IP so it takes
-// precedence over DHCP-provided servers in DHCP mode; in static mode it is the
-// only DNS source (defaults to the gateway when unset).
-static void apply_dns_override(void)
-{
-    const char *dns = config_manager_get_dns_server();
-    if ((dns == NULL || dns[0] == '\0') && config_manager_get_ip_mode() == IP_MODE_STATIC) {
-        dns = config_manager_get_static_gateway();
-    }
-    if (dns == NULL || dns[0] == '\0') {
-        return;
-    }
-
-    esp_netif_dns_info_t dns_info = {0};
-    if (esp_netif_str_to_ip4(dns, &dns_info.ip.u_addr.ip4) != ESP_OK) {
-        ESP_LOGE(TAG, "Invalid DNS server: %s", dns);
-        return;
-    }
-    dns_info.ip.type = ESP_IPADDR_TYPE_V4;
-    esp_netif_set_dns_info(s_sta_netif, ESP_NETIF_DNS_MAIN, &dns_info);
-    ESP_LOGI(TAG, "DNS server set to: %s", dns);
-}
-
 esp_err_t wifi_manager_connect(const char *ssid, const char *password)
 {
     if (!ssid || strlen(ssid) == 0) {
@@ -206,49 +137,23 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password)
     }
 
     wifi_manager_apply_ip_config();
+    return connectivity_runtime_connect_wait(ssid, password, 30000);
+}
 
-    wifi_config_t wifi_config = {0};
-    strncpy((char *) wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
-    if (password) {
-        strncpy((char *) wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
-    }
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-    wifi_config.sta.pmf_cfg.capable = true;
-    wifi_config.sta.pmf_cfg.required = false;
-
-    // Stop WiFi if it's running, then set config
-    esp_wifi_stop();
-
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));  // Enable power save at boot/connect
-
-    s_retry_num = 0;
-    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                                           pdFALSE, pdFALSE, portMAX_DELAY);
-
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap SSID:%s", ssid);
-        return ESP_OK;
-    } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s", ssid);
-        return ESP_FAIL;
-    } else {
-        ESP_LOGE(TAG, "UNEXPECTED EVENT");
-        return ESP_FAIL;
-    }
+esp_err_t wifi_manager_connect_async(const char *ssid, const char *password)
+{
+    wifi_manager_apply_ip_config();
+    return connectivity_runtime_connect_async(ssid, password);
 }
 
 esp_err_t wifi_manager_disconnect(void)
 {
-    s_is_connected = false;
-    return esp_wifi_disconnect();
+    return connectivity_runtime_stop(10000);
 }
 
 bool wifi_manager_is_connected(void)
 {
-    return s_is_connected;
+    return connectivity_runtime_is_connected();
 }
 
 esp_err_t wifi_manager_get_ip(char *ip_str, size_t len)
@@ -331,66 +236,29 @@ EventGroupHandle_t wifi_manager_get_event_group(void)
 
 int wifi_manager_scan(wifi_ap_record_t *results, int max_results)
 {
-    if (!results || max_results <= 0) {
-        return 0;
-    }
+    return connectivity_runtime_scan(results, max_results);
+}
 
-    // Save current WiFi mode
-    wifi_mode_t original_mode;
-    esp_err_t err = esp_wifi_get_mode(&original_mode);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get WiFi mode: %s", esp_err_to_name(err));
-        return 0;
-    }
+esp_err_t wifi_manager_start_provisioning_ap(const char *ssid)
+{
+    return connectivity_runtime_start_provisioning_ap(ssid);
+}
 
-    // Switch to APSTA mode if currently in AP-only mode
-    if (original_mode == WIFI_MODE_AP) {
-        err = esp_wifi_set_mode(WIFI_MODE_APSTA);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set APSTA mode: %s", esp_err_to_name(err));
-            return 0;
-        }
-    }
+esp_err_t wifi_manager_test_provisioning_candidate(const char *ssid, const char *password,
+                                                   bool use_static_ip, const char *static_ip,
+                                                   const char *netmask, const char *gateway,
+                                                   const char *dns, uint32_t timeout_ms)
+{
+    return connectivity_runtime_test_candidate(ssid, password, use_static_ip, static_ip, netmask,
+                                               gateway, dns, timeout_ms);
+}
 
-    // Start blocking scan on all channels
-    wifi_scan_config_t scan_config = {0};
-    err = esp_wifi_scan_start(&scan_config, true);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi scan failed: %s", esp_err_to_name(err));
-        if (original_mode == WIFI_MODE_AP) {
-            esp_wifi_set_mode(original_mode);
-        }
-        return 0;
-    }
+esp_err_t wifi_manager_finish_provisioning(void)
+{
+    return connectivity_runtime_finish_provisioning();
+}
 
-    // Get number of APs found
-    uint16_t ap_count = 0;
-    esp_wifi_scan_get_ap_num(&ap_count);
-
-    if (ap_count == 0) {
-        ESP_LOGI(TAG, "No APs found");
-        if (original_mode == WIFI_MODE_AP) {
-            esp_wifi_set_mode(original_mode);
-        }
-        return 0;
-    }
-
-    // Limit to max_results
-    uint16_t fetch_count = (ap_count > (uint16_t) max_results) ? (uint16_t) max_results : ap_count;
-    err = esp_wifi_scan_get_ap_records(&fetch_count, results);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to get scan results: %s", esp_err_to_name(err));
-        if (original_mode == WIFI_MODE_AP) {
-            esp_wifi_set_mode(original_mode);
-        }
-        return 0;
-    }
-
-    // Restore original WiFi mode
-    if (original_mode == WIFI_MODE_AP) {
-        esp_wifi_set_mode(original_mode);
-    }
-
-    ESP_LOGI(TAG, "WiFi scan found %d APs (returning %d)", ap_count, fetch_count);
-    return (int) fetch_count;
+esp_err_t wifi_manager_stop(uint32_t timeout_ms)
+{
+    return connectivity_runtime_stop(timeout_ms);
 }

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 # Add scripts to sys.path to import boards
 sys.path.append(os.path.join(os.path.dirname(__file__), "scripts"))
@@ -11,6 +13,61 @@ from boards import SUPPORTED_BOARDS
 BOARDS = list(SUPPORTED_BOARDS.keys())
 
 STEPS = ["webapp", "splash", "firmware"]
+PROJECT_IDF_TARGET = "esp32s3"
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def idf_invocation(board, extra_args, debug=False, environ=None):
+    """Return deterministic ESP-IDF arguments, post-build arguments, and environment."""
+    sdkconfig_defaults = f"sdkconfig.defaults;boards/sdkconfig.defaults.{board}"
+    if debug:
+        sdkconfig_defaults += ";sdkconfig.defaults.debug"
+
+    environment = dict(os.environ if environ is None else environ)
+    inherited_target = environment.get("IDF_TARGET")
+    if inherited_target and inherited_target != PROJECT_IDF_TARGET:
+        print(
+            f"Ignoring inherited IDF_TARGET={inherited_target}; "
+            f"this project requires {PROJECT_IDF_TARGET}."
+        )
+    environment["IDF_TARGET"] = PROJECT_IDF_TARGET
+
+    cmake_defines = []
+    post_build_args = []
+    for argument in extra_args:
+        if argument.startswith("-DIDF_TARGET="):
+            requested_target = argument.split("=", 1)[1]
+            if requested_target != PROJECT_IDF_TARGET:
+                print(
+                    f"Ignoring caller IDF_TARGET={requested_target}; "
+                    f"this project requires {PROJECT_IDF_TARGET}."
+                )
+            continue
+        if argument.startswith("-D"):
+            cmake_defines.append(argument)
+        else:
+            post_build_args.append(argument)
+
+    idf_base = [
+        "idf.py",
+        f"-DIDF_TARGET={PROJECT_IDF_TARGET}",
+        f"-DSDKCONFIG_DEFAULTS={sdkconfig_defaults}",
+    ]
+    return idf_base, cmake_defines, post_build_args, environment
+
+
+def clean_project_state(project_root=None):
+    """Delete only generated project configuration/build state."""
+    project_root = PROJECT_ROOT if project_root is None else Path(project_root)
+    for filename in ("sdkconfig", "partitions.csv"):
+        path = project_root / filename
+        if path.exists():
+            path.unlink()
+            print(f"  ✓ Removed {filename}")
+    build_dir = project_root / "build"
+    if build_dir.is_dir():
+        shutil.rmtree(build_dir)
+        print("  ✓ Removed build/")
 
 
 def build_webapp():
@@ -59,26 +116,15 @@ def generate_splash(board):
 def build_firmware(board, extra_args, debug=False):
     """Build firmware with idf.py."""
     print(f"\n=== Building firmware for {board}{' [debug]' if debug else ''} ===")
-    sdkconfig_defaults = f"sdkconfig.defaults;boards/sdkconfig.defaults.{board}"
-    if debug:
-        # Debug-only overlay: core-dump-to-flash capture (+ the coredump partition
-        # from generate_partitions.py). Changes the partition table — never used
-        # for release or demo builds.
-        sdkconfig_defaults += ";sdkconfig.defaults.debug"
-
-    idf_base = [
-        "idf.py",
-        f"-DSDKCONFIG_DEFAULTS={sdkconfig_defaults}",
-    ]
-
-    cmake_defines = [a for a in extra_args if a.startswith("-D")]
-    post_build_args = [a for a in extra_args if not a.startswith("-D")]
+    idf_base, cmake_defines, post_build_args, environment = idf_invocation(
+        board, extra_args, debug=debug
+    )
 
     build_cmd = idf_base + cmake_defines + ["build"]
     print(f"Running: {' '.join(build_cmd)}")
 
     try:
-        subprocess.run(build_cmd, check=True)
+        subprocess.run(build_cmd, check=True, env=environment)
     except subprocess.CalledProcessError as e:
         print(f"Build failed with exit code {e.returncode}")
         sys.exit(e.returncode)
@@ -93,7 +139,7 @@ def build_firmware(board, extra_args, debug=False):
         post_cmd = idf_base + post_build_args
         print(f"Running: {' '.join(post_cmd)}")
         try:
-            subprocess.run(post_cmd, check=True)
+            subprocess.run(post_cmd, check=True, env=environment)
         except subprocess.CalledProcessError as e:
             print(f"Post-build command failed with exit code {e.returncode}")
             sys.exit(e.returncode)
@@ -110,7 +156,7 @@ def main():
     parser.add_argument(
         "--fullclean",
         action="store_true",
-        help="Remove sdkconfig and run idf.py fullclean before building",
+        help="Remove generated sdkconfig, partitions.csv, and build/ before building",
     )
     parser.add_argument(
         "--debug",
@@ -132,15 +178,7 @@ def main():
 
     if args.fullclean:
         print("Performing full clean...")
-        import shutil
-
-        for f in ["sdkconfig", "partitions.csv"]:
-            if os.path.exists(f):
-                os.remove(f)
-                print(f"  ✓ Removed {f}")
-        if os.path.isdir("build"):
-            shutil.rmtree("build")
-            print("  ✓ Removed build/")
+        clean_project_state()
 
     if "webapp" in steps:
         build_webapp()

@@ -1,4 +1,4 @@
-.PHONY: format format-check format-diff test test-provisioning-form test-wifi-import test-connectivity-policy test-wifi-epoch-trace help install-hooks
+.PHONY: format format-check format-diff test test-build-helper test-provisioning-form test-wifi-import test-connectivity-policy test-wifi-epoch-trace help install-hooks
 
 # Use clang-format-18 for consistency with CI
 # On macOS: brew install llvm@18 && brew link llvm@18
@@ -21,6 +21,7 @@ help:
 	@echo "  format-check  - Check if files need formatting (non-zero exit if changes needed)"
 	@echo "  format-diff   - Show what would change without modifying files"
 	@echo "  test          - Build and run unit tests (requires ESP-IDF environment)"
+	@echo "  test-build-helper - Run dependency-free build.py target-selection tests"
 	@echo "  test-provisioning-form - Run dependency-free provisioning boundary tests"
 	@echo "  test-wifi-import - Run dependency-free wifi.txt import tests"
 	@echo "  test-connectivity-policy - Run dependency-free boot/retry policy tests"
@@ -80,6 +81,7 @@ format-diff:
 	fi
 
 test:
+	@$(MAKE) test-build-helper
 	@$(MAKE) test-provisioning-form
 	@$(MAKE) test-wifi-import
 	@$(MAKE) test-connectivity-policy
@@ -95,6 +97,9 @@ test:
 	@cd process-cli && npm install --silent && npm run test:orientation
 	@echo ""
 	@echo "✓ All tests passed!"
+
+test-build-helper:
+	@PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -v host_tests/test_build_helper.py
 
 test-provisioning-form:
 	@mkdir -p host_tests/build
@@ -116,6 +121,10 @@ test-connectivity-policy:
 		main/connectivity_policy.c host_tests/test_connectivity_policy.c \
 		-o host_tests/build/connectivity_policy_test
 	@./host_tests/build/connectivity_policy_test
+	@$(CC) -std=c11 -Wall -Wextra -Werror -pedantic -Imain \
+		main/connectivity_lifecycle.c host_tests/test_connectivity_lifecycle.c \
+		-o host_tests/build/connectivity_lifecycle_test
+	@./host_tests/build/connectivity_lifecycle_test
 
 test-wifi-epoch-trace:
 	@cd tools/wifi_epoch_fence_probe && python3 -m unittest -v test_checker.py
