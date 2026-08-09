@@ -38,8 +38,8 @@ bool semantic_button_init(semantic_button_t *button, semantic_button_control_t c
     if (control == SEMANTIC_BUTTON_CONTROL_UNAVAILABLE) {
         return true;
     }
-    if (config.debounce_ms == 0 || config.long_press_ms == 0 ||
-        config.long_press_ms <= config.debounce_ms) {
+    if (config.debounce_ms == 0 ||
+        (control == SEMANTIC_BUTTON_CONTROL_REFRESH_CLEAR && config.long_press_ms == 0)) {
         return false;
     }
 

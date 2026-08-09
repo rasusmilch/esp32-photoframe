@@ -18,7 +18,9 @@ Current host CMake tests cover cron and wake scheduling, while `make test` also 
 classifier. It covers configuration rejection, exact stable-time debounce and long-press boundaries,
 noisy press/release samples, refresh versus exactly-once clear, previous/next without hold repeats,
 held-at-wake suppression through release, independent simultaneous controls, unavailable controls,
-and unsigned timestamp wrap. Thresholds are injected test fixtures rather than product policy. The
+and unsigned timestamp wrap. It also verifies that previous/next ignore long timing and that a
+refresh/clear long threshold at or below debounce remains deterministic because long timing starts
+only after press acceptance. Thresholds are injected test fixtures rather than product policy. The
 classifier is not connected to GPIO, board mappings, wake handling, or production actions; firmware
 integration and hardware validation remain pending.
 

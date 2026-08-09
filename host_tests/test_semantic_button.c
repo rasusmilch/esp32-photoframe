@@ -37,12 +37,15 @@ static bool test_configuration(void)
     CHECK(!semantic_button_init(&button, SEMANTIC_BUTTON_CONTROL_NEXT,
                                 (semantic_button_config_t) {.debounce_ms = 0, .long_press_ms = 100},
                                 false, false, 0));
-    CHECK(!semantic_button_init(&button, SEMANTIC_BUTTON_CONTROL_NEXT,
-                                (semantic_button_config_t) {.debounce_ms = 10, .long_press_ms = 10},
+    CHECK(!semantic_button_init(&button, SEMANTIC_BUTTON_CONTROL_REFRESH_CLEAR,
+                                (semantic_button_config_t) {.debounce_ms = 10, .long_press_ms = 0},
                                 false, false, 0));
-    CHECK(!semantic_button_init(&button, SEMANTIC_BUTTON_CONTROL_NEXT,
-                                (semantic_button_config_t) {.debounce_ms = 11, .long_press_ms = 10},
-                                false, false, 0));
+    CHECK(semantic_button_init(&button, SEMANTIC_BUTTON_CONTROL_REFRESH_CLEAR,
+                               (semantic_button_config_t) {.debounce_ms = 10, .long_press_ms = 10},
+                               false, false, 0));
+    CHECK(semantic_button_init(&button, SEMANTIC_BUTTON_CONTROL_REFRESH_CLEAR,
+                               (semantic_button_config_t) {.debounce_ms = 11, .long_press_ms = 10},
+                               false, false, 0));
     CHECK(semantic_button_init(&button, SEMANTIC_BUTTON_CONTROL_UNAVAILABLE,
                                (semantic_button_config_t) {0}, true, true, 0));
     return true;
@@ -112,12 +115,47 @@ static bool test_refresh_clear(void)
     return true;
 }
 
+static bool test_low_and_equal_long_thresholds(void)
+{
+    semantic_button_t lower;
+    semantic_button_t equal;
+    semantic_button_config_t lower_config = {.debounce_ms = 10, .long_press_ms = 5};
+    semantic_button_config_t equal_config = {.debounce_ms = 10, .long_press_ms = 10};
+
+    CHECK(semantic_button_init(&lower, SEMANTIC_BUTTON_CONTROL_REFRESH_CLEAR, lower_config, false,
+                               false, 0));
+    CHECK(semantic_button_update(&lower, true, 0) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&lower, false, 9) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&lower, false, 20) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&lower, true, 30) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&lower, true, 40) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&lower, true, 44) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&lower, true, 45) == SEMANTIC_BUTTON_EVENT_CLEAR_DISPLAY);
+    CHECK(semantic_button_update(&lower, true, 46) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&lower, false, 50) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&lower, false, 60) == SEMANTIC_BUTTON_EVENT_NONE);
+
+    CHECK(semantic_button_init(&equal, SEMANTIC_BUTTON_CONTROL_REFRESH_CLEAR, equal_config, false,
+                               false, 100));
+    CHECK(semantic_button_update(&equal, true, 100) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&equal, true, 110) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&equal, true, 119) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&equal, true, 120) == SEMANTIC_BUTTON_EVENT_CLEAR_DISPLAY);
+    CHECK(semantic_button_update(&equal, true, 121) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&equal, false, 130) == SEMANTIC_BUTTON_EVENT_NONE);
+    CHECK(semantic_button_update(&equal, false, 140) == SEMANTIC_BUTTON_EVENT_NONE);
+    return true;
+}
+
 static bool test_previous_and_next(void)
 {
     semantic_button_t previous;
     semantic_button_t next;
-    CHECK(init(&previous, SEMANTIC_BUTTON_CONTROL_PREVIOUS));
-    CHECK(init(&next, SEMANTIC_BUTTON_CONTROL_NEXT));
+    semantic_button_config_t short_only_config = {.debounce_ms = 10, .long_press_ms = 0};
+    CHECK(semantic_button_init(&previous, SEMANTIC_BUTTON_CONTROL_PREVIOUS, short_only_config,
+                               false, false, 0));
+    CHECK(semantic_button_init(&next, SEMANTIC_BUTTON_CONTROL_NEXT, short_only_config, false, false,
+                               0));
     CHECK(short_press(&previous, 0, SEMANTIC_BUTTON_EVENT_PREVIOUS_IMAGE));
     CHECK(short_press(&next, 0, SEMANTIC_BUTTON_EVENT_NEXT_IMAGE));
 
@@ -214,8 +252,8 @@ static bool test_timestamp_wrap(void)
 int main(void)
 {
     if (!test_configuration() || !test_debounce_boundaries_and_noise() || !test_refresh_clear() ||
-        !test_previous_and_next() || !test_held_wake() || !test_independence_and_unavailable() ||
-        !test_timestamp_wrap()) {
+        !test_low_and_equal_long_thresholds() || !test_previous_and_next() || !test_held_wake() ||
+        !test_independence_and_unavailable() || !test_timestamp_wrap()) {
         return 1;
     }
     puts("semantic button tests passed");

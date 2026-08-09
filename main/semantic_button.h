@@ -26,7 +26,7 @@ typedef struct {
 
 /**
  * Independent state for one physical control. Callers should treat these fields as opaque.
- * Time is monotonic modulo UINT64_MAX; elapsed time uses defined unsigned subtraction.
+ * Time is monotonic modulo 2^64; elapsed time uses defined uint64_t unsigned subtraction.
  */
 typedef struct {
     semantic_button_control_t control;
@@ -44,8 +44,9 @@ typedef struct {
 /**
  * Initialize one classifier.
  *
- * A usable control requires nonzero timings and long_press_ms > debounce_ms. An unavailable
- * control is always accepted as a no-op and ignores timing and initial-state arguments.
+ * Every usable control requires a nonzero debounce_ms. Refresh/clear additionally requires a
+ * nonzero long_press_ms; previous and next ignore long_press_ms. An unavailable control is always
+ * accepted as a no-op and ignores timing and initial-state arguments.
  * Set suppress_if_asserted when an initially asserted control must emit nothing until its first
  * debounced release, such as a control already held when sampling begins.
  */
