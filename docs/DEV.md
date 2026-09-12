@@ -134,11 +134,11 @@ These commands are derived from current local scripts/workflows:
 | Web lint | `cd webapp && npm run lint:check` | documented from package scripts; unknown locally |
 | Review | `git diff --check` | verified locally for the governance bootstrap |
 | Focused review | `git diff -- README.md CHANGELOG.md AGENTS.md docs/` | verified locally for scope inspection |
-| Firmware | `python3 build.py --board BOARD` | CI-verified historically for the six IDs below; environment-limited here |
+| Firmware | `python3 build.py --board BOARD` | Build every ID currently present in `boards/boards.json`; current-catalog compilation is not established by historical coverage and is environment-limited here |
 | Flash/monitor | `idf.py -p PORT flash monitor` | hardware-only; environment-limited here |
 | Hardware | follow `docs/VALIDATION.md` matrix and record observations | pending hardware validation |
 
-Board build IDs are `waveshare_photopainter_73`, `seeedstudio_xiao_ee02`, `seeedstudio_xiao_ee04`, `seeedstudio_reterminal_e1002`, `seeedstudio_reterminal_e1003`, and `seeedstudio_reterminal_e1004`. Use `python3 build.py --board ID` for each. Documentation checks include verifying routed paths exist, checking local relative links, searching for current/target contradictions, and confirming the diff touches documentation only.
+Build every ID currently present in `boards/boards.json`; that catalog, rather than this descriptive list or a fixed count, defines the supported build matrix. At this revision the IDs are `waveshare_photopainter_73`, `seeedstudio_xiao_ee02`, `seeedstudio_xiao_ee03`, `seeedstudio_xiao_ee04`, `seeedstudio_reterminal_e1002`, `seeedstudio_reterminal_e1003`, and `seeedstudio_reterminal_e1004`. Use `python3 build.py --board ID` for each. Catalog presence is not compilation or hardware-validation evidence. Documentation checks include verifying routed paths exist, checking local relative links, searching for current/target contradictions, and confirming the diff touches documentation only.
 
 The standalone epoch probe is under `tools/wifi_epoch_fence_probe`. Later, with the exact supported
 ESP-IDF and hardware, use `idf.py set-target esp32s3`, `idf.py menuconfig`, and
@@ -148,6 +148,8 @@ scenario selection, capture/check commands, metadata, repetition threshold, and 
 ## Code-documentation policy
 
 Document public-header contracts, state-machine transitions, task/concurrency ownership, buffer ownership/lifetimes, persistence keys and migration, failure/retry behavior, security-sensitive parsing and redaction, GPIO polarity and evidence, board-specific exceptions, and non-obvious power/wake rationale. Comments must distinguish source-derived assumptions from physical validation; do not present speculative hardware behavior as fact. Update architecture, hardware, operations, testing, decisions, validation, and changelog whenever their contracts are affected.
+
+A replacement implementation must include a focused audit of directly superseded source, public and internal APIs, constants, state, persistence keys/accessors, tests/fixtures, comments, and documentation. Acceptance requires either removing each obsolete artifact or documenting the current accepted compatibility, migration, rollback, recovery, stored-data-transition, interoperability, or other product requirement that still needs it and its lifetime. Do not use this audit for unrelated refactoring or speculative cleanup.
 
 ### Erase Flash
 

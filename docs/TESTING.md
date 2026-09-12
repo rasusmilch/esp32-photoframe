@@ -72,6 +72,8 @@ The follow-up implementation for REQ-STATE-* and DEC-018 remains pending. Its va
 
 Source review or instrumented host fakes can establish which storage APIs are called. Firmware compilation establishes only build compatibility. Claims about RTC retention across deep sleep and durable configuration across real reset/power loss require applicable board/hardware procedures and observations in `docs/VALIDATION.md`; none are implied by this governance change.
 
+For any replacement implementation, focused source review and search must identify directly superseded code, state, APIs, persistence artifacts, tests/fixtures, comments, and documentation. Evidence must show that obsolete competing mechanisms were removed or identify the current accepted requirement that retains each one; deletion itself needs no meaningless runtime test when inspection is sufficient. Keep this review scoped to artifacts directly superseded by the work.
+
 ## Build and hardware coverage
 
 Build all IDs in `boards/boards.json`. E1002/E1004 matrices must cover the scenarios in `docs/VALIDATION.md`, including revision-specific power behavior. Other boards require GPIO/wake review and eventual physical checks, with unavailable controls explicit.

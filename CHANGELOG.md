@@ -12,6 +12,10 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   explicitly power-loss-durable state; slideshow position and periodic SNTP/OTA last-run
   bookkeeping no longer require durable persistence. This changes the governing contract only;
   removing the existing transient NVS writes remains follow-up implementation work.
+- Defined supported-board preservation from the authoritative board catalog/build matrix rather
+  than a fixed count, and required replacement work to remove directly superseded artifacts unless
+  a current accepted compatibility, migration, rollback, recovery, or equivalent need retains them.
+  No runtime cleanup or new board validation is claimed.
 - No firmware runtime behavior changed.
 
 ### Security
