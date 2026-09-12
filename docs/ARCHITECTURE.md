@@ -21,7 +21,7 @@ state. Deadlines remain default/configurable and saturating.
   `wifi.txt` import, Wi-Fi/provisioning initialization, then provisioning and connection decisions.
   Clear/timer/rotate fast-wake paths dispatch before the normal import. This ensures a verified
   imported device name is cached before the Wi-Fi manager derives its DHCP hostname.
-- **Local slideshow domain:** owns deterministic inventory, current identity, refresh, previous/next, and persistence after display success.
+- **Local slideshow domain:** owns deterministic inventory, current identity, refresh, previous/next, and logical-position advancement after display success. Its active cursor is runtime state, not a per-navigation durable-write boundary.
 - **Credential-import transaction:** current implementation discovers the config path before root, parses and stages without side effects, preserves the current device name when omitted, commits SSID/password/name together, reopens and verifies, publishes caches, then deletes the exact source. Complete, absent, incomplete (exactly one credential key), and operational-error profiles are distinct. A valid candidate repairs an incomplete pair through the same commit; equality with a complete verified profile provides idempotent deletion-only recovery after deletion failure.
 - **Connectivity coordinator:** `connectivity_runtime.c` owns one long-lived command/event queue, immutable epoch/attempt/generation identity, retry-policy state, connection deadlines, mode-aware stop evidence, default-loop fence dispatch, quiet quarantine, and fail-closed reuse. `connectivity_lifecycle.c` is its dependency-free ordering model for host regression tests. Compatibility APIs may wait for a qualified result, but cannot call lifecycle-affecting driver APIs themselves.
 - **Provisioning service:** receives a complete bounded body, strictly decodes and validates candidates, then activates atomically.
@@ -31,6 +31,16 @@ state. Deadlines remain default/configurable and saturating.
 - **Optional integrations:** HTTP, mDNS, HA, URL rotation, OTA, and SNTP consume connectivity but never gate local slideshow or controls.
 
 **Core dependency rule:** connectivity may enable network features, but must not own or gate local slideshow, storage navigation, buttons, or retained valid displayed content.
+
+## State-lifetime boundary
+
+State is classified by the lifetime that product correctness actually requires:
+
+1. **Durable configuration/state** uses NVS or another explicitly durable store because operator configuration, credentials/security state, or another accepted correctness requirement must survive reset and power loss. This includes the durable configuration named by REQ-STATE-001; the new boundary does not weaken credential, provisioning, or integration durability.
+2. **Runtime state** uses RAM and is disposable or reconstructable. Ordinary navigation position and scheduler bookkeeping are in this class, and cold boot must rebuild safe values rather than depend on flash bookkeeping.
+3. **Deep-sleep continuity state** may use RTC-retained memory when continuity materially improves behavior, but may be lost on reset or power removal. Any retained representation must include validity and version checks with safe fallback. It should not exist when reconstruction is simpler and harmless.
+
+The current implementation predates this boundary and remains implementation debt: `last_idx` in the `photoframe` NVS namespace and `last_image` store local slideshow position/identity, `last_fetch_err` stores a changing fetch diagnostic solely across sleep/boot, and `sntp_sync` and `ota_check` in the `periodic` NVS namespace store periodic last-run timestamps. Follow-up implementation must remove or redesign those NVS-backed runtime paths; this document does not claim that the keys or writes have already been removed. Future local slideshow architecture must not depend on an NVS write for each rotation or navigation event. SNTP and OTA scheduling must not depend on durable last-run timestamps: optional RTC retention may bridge deep sleep, or a cold boot may restart the schedule and perform an extra harmless check, unless later accepted authority establishes a power-loss durability need.
 
 ## Production physical-attempt fence
 

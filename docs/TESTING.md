@@ -57,8 +57,20 @@ Passing fixtures cover A–G plus the valid A and D first-attempt timeout altern
 - **Credential import:** valid/malformed file with existing credentials; NVS open/set/commit/readback failure; power loss before commit and after commit before deletion; unlink failure; retained committed file on reboot; both file locations; optional device name; no partial changes or secrets.
 - **Boot/connectivity:** no credentials plus local images; valid credentials with AP unavailable for hours; default/configured retry and later success; no erasure, restart loop, or overlapping attempt; buttons during connection/provisioning; valid image not replaced.
 - **Buttons:** bounce/debounce boundaries; short press; just below/at/above long threshold; held wake/release; exactly one long event and no following short event; simultaneous/unavailable controls; offline and provisioning states.
-- **Navigation:** empty/one/many images; previous-first and next-last wrap; ordering independent of `readdir`; insertion/removal; album changes; display failure; reboot persistence; concurrent timer/button/web actions.
+- **Navigation:** empty/one/many images; previous-first and next-last wrap; ordering independent of `readdir`; insertion/removal; album changes; display failure; deterministic cold-boot reconstruction without cursor persistence; concurrent timer/button/web actions.
 - **Power/wake:** timer and each physical button; early wake; offline storage wake; URL network dependency; HA behavior; E1004 light-sleep restriction; per-board wake masks and storage preparation.
+
+## State-lifetime implementation evidence
+
+The follow-up implementation for REQ-STATE-* and DEC-018 remains pending. Its validation must keep host/source, firmware-build, and physical-hardware evidence distinct and must verify:
+
+- repeated local rotation and timer-, button-, or web-originated navigation do not write `last_idx`, `last_image`, or an equivalent slideshow cursor/runtime position to NVS;
+- successful ordinary SNTP and OTA periodic-task bookkeeping does not require NVS writes for `sntp_sync`, `ota_check`, or equivalent last-run timestamps;
+- if RTC retention is implemented, deep-sleep continuity works without flash writes, retained data has validity/version protection, and absent, invalid, or incompatible retained data falls back safely;
+- cold boot with no valid retained runtime state reconstructs deterministic, safe navigation and scheduling state, including tolerating an extra harmless SNTP or OTA check;
+- durable operator configuration, Wi-Fi/static-network credentials, device/security settings, and other REQ-STATE-001 data still survive reset and power loss, so removal of transient writes does not weaken credential or configuration durability.
+
+Source review or instrumented host fakes can establish which storage APIs are called. Firmware compilation establishes only build compatibility. Claims about RTC retention across deep sleep and durable configuration across real reset/power loss require applicable board/hardware procedures and observations in `docs/VALIDATION.md`; none are implied by this governance change.
 
 ## Build and hardware coverage
 

@@ -40,7 +40,15 @@ This document is normative. “Must” requirements are accepted; current firmwa
 - **REQ-CONTROL-002:** Logical actions must be separate from physical GPIO names and work offline without Home Assistant.
 - **REQ-CONTROL-003:** Debouncing and duration handling must make short/long actions unambiguous; bounce, short presses, and held wake transitions must not clear.
 - **REQ-NAV-001:** Provide refresh-current, previous, and next over deterministic image ordering with explicit wraparound.
-- **REQ-NAV-002:** Persist navigation only after display success; handle insertions/removals predictably and serialize timer, button, and web actions.
+- **REQ-NAV-002:** Commit or advance the logical navigation position only after the target image is displayed successfully; handle insertions/removals predictably and serialize timer, button, and web actions. Active-runtime position belongs in RAM, optional RTC-retained continuity may bridge deep sleep, and no requirement exists to preserve local slideshow position across reset or full power loss. A cold boot may restart deterministically from a defined inventory position.
+
+### State lifetime and persistence
+
+- **REQ-STATE-001:** NVS or another durable flash store is reserved for operator configuration, credentials and security state, and other state with an explicit product-correctness requirement to survive reset or power loss. Wi-Fi credentials, static network settings, device identity, timezone, display and slideshow configuration, enabled albums, integration configuration, image-processing configuration, and permitted API credentials/settings retain their durable semantics.
+- **REQ-STATE-002:** Volatile RAM is the default home for ordinary or frequently changing runtime bookkeeping. Such state must not be written to NVS merely for implementation convenience, normal-operation continuity, or survival across deep sleep; in particular, slideshow rotation, button navigation, and ordinary periodic-task completion must not cause recurring flash writes solely to retain runtime position or last-run time.
+- **REQ-STATE-003:** State that materially benefits from continuity across deep sleep but need not survive reset or power loss may use RTC-retained memory. Retained state must have validity and version protection with a safe fallback when absent or invalid; retention is optional and reconstruction is preferred when safe, simple, and harmless.
+- **REQ-STATE-004:** A true cold boot may forget ephemeral slideshow position, SNTP/OTA last-run timestamps, and analogous runtime bookkeeping, and must reconstruct safe runtime state deterministically. Correctness must not depend on durable preservation of those values unless a later accepted requirement explicitly establishes that need.
+- **REQ-STATE-005:** Any future exception that adds recurring durable writes for frequently changing runtime state requires an explicit accepted requirement and decision with a correctness justification; convenience or deep-sleep continuity alone is insufficient. Existing NVS wear leveling does not justify designing unnecessary flash writes.
 
 ### Images, security, and compatibility
 

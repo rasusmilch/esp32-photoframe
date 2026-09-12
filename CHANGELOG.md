@@ -8,6 +8,10 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
 
 - Added repository-wide authority routing and adopted offline-first and compatibility requirements.
 - Added architecture, hardware, operations, testing, decision, and validation authorities.
+- Adopted a state-lifetime policy that reserves NVS/durable flash for operator configuration and
+  explicitly power-loss-durable state; slideshow position and periodic SNTP/OTA last-run
+  bookkeeping no longer require durable persistence. This changes the governing contract only;
+  removing the existing transient NVS writes remains follow-up implementation work.
 - No firmware runtime behavior changed.
 
 ### Security
