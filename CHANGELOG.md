@@ -10,13 +10,13 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
 - Added architecture, hardware, operations, testing, decision, and validation authorities.
 - Adopted a state-lifetime policy that reserves NVS/durable flash for operator configuration and
   explicitly power-loss-durable state; slideshow position and periodic SNTP/OTA last-run
-  bookkeeping no longer require durable persistence. This changes the governing contract only;
-  removing the existing transient NVS writes remains follow-up implementation work.
+  bookkeeping no longer require durable persistence. Removed `last_image` NVS persistence so
+  storage-rotation repeat avoidance is RAM-only and advances only after successful display;
+  `last_idx`, `last_fetch_err`, and periodic timestamp cleanup remains follow-up work.
 - Defined supported-board preservation from the authoritative board catalog/build matrix rather
   than a fixed count, and required replacement work to remove directly superseded artifacts unless
   a current accepted compatibility, migration, rollback, recovery, or equivalent need retains them.
-  No runtime cleanup or new board validation is claimed.
-- No firmware runtime behavior changed.
+  No additional runtime cleanup or new board validation is claimed.
 
 ### Security
 

@@ -8,7 +8,7 @@ Prepare enabled albums under `/storage/images`; the firmware creates/uses a defa
 
 Normal cold boot starts local controls and storage-capable operation without waiting for Wi-Fi association. With complete credentials, the serialized connectivity owner attempts STA connection asynchronously; URL mode remains network-dependent for new downloads. With absent credentials, captive provisioning remains available while local controls continue. Network retry is serialized in the background every 15 minutes by default and does not replace valid displayed content.
 
-The accepted storage policy does not promise that local slideshow position or SNTP/OTA last-run timestamps survive reset or power loss. A cold boot may restart navigation from a defined inventory position and may perform an otherwise harmless extra time sync or update check. Durable operator configuration and credentials continue to survive reset/power loss; current firmware still has legacy NVS-backed runtime bookkeeping pending follow-up removal.
+The accepted storage policy does not promise that local slideshow position or SNTP/OTA last-run timestamps survive reset or power loss. A cold boot may restart navigation from a defined inventory position and may perform an otherwise harmless extra time sync or update check. Storage-rotation repeat avoidance is RAM-only and may forget the prior image after sleep/reset. Durable operator configuration and credentials continue to survive reset/power loss; other legacy NVS-backed runtime bookkeeping remains pending follow-up removal.
 
 ## Captive portal
 

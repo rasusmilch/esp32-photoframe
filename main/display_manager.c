@@ -23,13 +23,11 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
-#include "nvs.h"
 #include "storage.h"
 #include "utils.h"
 #include "zlib.h"
 
 static const char *TAG = "display_manager";
-#define NVS_LAST_IMAGE_KEY "last_image"
 
 // Display operations (streamed processing plus the panel refresh) can
 // legitimately hold the display mutex for a minute or more; waiters queue
@@ -51,44 +49,16 @@ static UWORD display_white_color(void)
 
 static SemaphoreHandle_t display_mutex = NULL;
 static char current_image[64] = {0};
-static char last_displayed_image[256] = {0};  // Internal state: last displayed image path
+// Awake-session storage-rotation state only; reset/deep sleep may forget it.
+static char last_displayed_image[256] = {0};
 
 static uint8_t *epd_image_buffer = NULL;
 static uint32_t image_buffer_size;
 
-// Load last displayed image from NVS
-static void load_last_displayed_image(void)
+static void record_last_displayed_image(const char *filename)
 {
-    nvs_handle_t nvs_handle;
-    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
-        size_t len = sizeof(last_displayed_image);
-        if (nvs_get_str(nvs_handle, NVS_LAST_IMAGE_KEY, last_displayed_image, &len) == ESP_OK) {
-            ESP_LOGI(TAG, "Loaded last displayed image: %s", last_displayed_image);
-        } else {
-            last_displayed_image[0] = '\0';
-        }
-        nvs_close(nvs_handle);
-    }
-}
-
-// Save last displayed image to NVS
-static void save_last_displayed_image(const char *filename)
-{
-    if (filename == NULL) {
-        return;
-    }
-
     strncpy(last_displayed_image, filename, sizeof(last_displayed_image) - 1);
     last_displayed_image[sizeof(last_displayed_image) - 1] = '\0';
-
-    nvs_handle_t nvs_handle;
-    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
-        nvs_set_str(nvs_handle, NVS_LAST_IMAGE_KEY, last_displayed_image);
-        nvs_commit(nvs_handle);
-        nvs_close(nvs_handle);
-    }
-
-    ESP_LOGI(TAG, "Saved last displayed image: %s", last_displayed_image);
 }
 
 // Helper function to create link file pointing to current image
@@ -457,7 +427,7 @@ esp_err_t display_manager_clear(void)
     // Remove the current image link so API returns 404
     unlink(CURRENT_IMAGE_LINK);
     current_image[0] = '\0';
-    save_last_displayed_image("");
+    last_displayed_image[0] = '\0';
 
     xSemaphoreGive(display_mutex);
     return ESP_OK;
@@ -516,7 +486,6 @@ static void rotate_sequential(char **enabled_albums, int album_count)
     int32_t target_idx = last_idx + 1;
     int32_t current_idx = 0;
     char first_image[512] = {0};
-    bool found_target = false;
 
     for (int i = 0; i < album_count; i++) {
         char album_path[256];
@@ -548,10 +517,10 @@ static void rotate_sequential(char **enabled_albums, int album_count)
 
                     if (current_idx == target_idx) {
                         ESP_LOGI(TAG, "Found target index %ld: %s", (long) target_idx, fullpath);
-                        display_manager_show_image(fullpath);
-                        save_last_displayed_image(fullpath);
-                        config_manager_set_last_index(target_idx);
-                        found_target = true;
+                        if (display_manager_show_image(fullpath) == ESP_OK) {
+                            record_last_displayed_image(fullpath);
+                            config_manager_set_last_index(target_idx);
+                        }
                         closedir(dir);
                         return;
                     }
@@ -562,22 +531,19 @@ static void rotate_sequential(char **enabled_albums, int album_count)
         closedir(dir);
     }
 
-    ESP_LOGI(
-        TAG,
-        "Sequential rotation finished traversal. current_idx=%ld, target_idx=%ld, found_target=%d",
-        (long) current_idx, (long) target_idx, found_target);
+    ESP_LOGI(TAG, "Sequential rotation finished traversal. current_idx=%ld, target_idx=%ld",
+             (long) current_idx, (long) target_idx);
 
     // If we reached here, we didn't find the target index (or the list has changed and is
     // shorter) Wrap around to the first image
-    if (!found_target) {
-        if (first_image[0] != '\0') {
-            ESP_LOGI(TAG, "Wrapping around to start. Displaying: %s", first_image);
-            display_manager_show_image(first_image);
-            save_last_displayed_image(first_image);
+    if (first_image[0] != '\0') {
+        ESP_LOGI(TAG, "Wrapping around to start. Displaying: %s", first_image);
+        if (display_manager_show_image(first_image) == ESP_OK) {
+            record_last_displayed_image(first_image);
             config_manager_set_last_index(0);  // Reset index to 0
-        } else {
-            ESP_LOGW(TAG, "No images found in any enabled albums.");
         }
+    } else {
+        ESP_LOGW(TAG, "No images found in any enabled albums.");
     }
 }
 
@@ -668,11 +634,6 @@ static void rotate_random(char **enabled_albums, int album_count)
         return;
     }
 
-    // Load last displayed image if not already loaded
-    if (last_displayed_image[0] == '\0') {
-        load_last_displayed_image();
-    }
-
     // Select random image, avoiding the last displayed image if possible
     int random_index = esp_random() % total_image_count;
 
@@ -695,10 +656,9 @@ static void rotate_random(char **enabled_albums, int album_count)
     // Display random image
     ESP_LOGI(TAG, "Auto-rotate: Displaying random image %d/%d: %s", random_index + 1,
              total_image_count, image_list[random_index]);
-    display_manager_show_image(image_list[random_index]);
-
-    // Store the displayed image filename in NVS
-    save_last_displayed_image(image_list[random_index]);
+    if (display_manager_show_image(image_list[random_index]) == ESP_OK) {
+        record_last_displayed_image(image_list[random_index]);
+    }
 
     // Free image list
     for (int i = 0; i < total_image_count; i++) {

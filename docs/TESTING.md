@@ -62,7 +62,7 @@ Passing fixtures cover A–G plus the valid A and D first-attempt timeout altern
 
 ## State-lifetime implementation evidence
 
-The follow-up implementation for REQ-STATE-* and DEC-018 remains pending. Its validation must keep host/source, firmware-build, and physical-hardware evidence distinct and must verify:
+Implementation of REQ-STATE-* and DEC-018 is incremental: source review has removed `last_image` NVS persistence and made storage-rotation repeat avoidance RAM-only, while `last_idx`, `last_fetch_err`, periodic timestamps, retained-state behavior, and broader validation remain pending. Validation must keep host/source, firmware-build, and physical-hardware evidence distinct and must verify:
 
 - repeated local rotation and timer-, button-, or web-originated navigation do not write `last_idx`, `last_image`, or an equivalent slideshow cursor/runtime position to NVS;
 - successful ordinary SNTP and OTA periodic-task bookkeeping does not require NVS writes for `sntp_sync`, `ota_check`, or equivalent last-run timestamps;
