@@ -8,6 +8,7 @@ This contract is derived from current board definitions. **Adopted** means requi
 |---|---|---|---|---|
 | `waveshare_photopainter_73` | 800×480 Spectra, 180° | SDIO: CLK39 CMD41 D0–D3 40/1/2/38 | BOOT0 short refresh/long clear; KEY4 next; dedicated previous unavailable | adopted + source-derived; pending |
 | `seeedstudio_xiao_ee02` | 1200×1600, 0° | LittleFS | Button3 GPIO5 short refresh/long clear; Button2 GPIO3 previous; Button1 GPIO2 next | adopted + source-derived; pending |
+| `seeedstudio_xiao_ee03` | 1872×1404 GC16, 0° | LittleFS | Button3 GPIO5 short refresh/long clear; Button2 GPIO3 previous; Button1 GPIO2 next | adopted + source-derived; pending |
 | `seeedstudio_xiao_ee04` | 800×480, 0° | LittleFS | Button3 GPIO5 short refresh/long clear; Button2 GPIO3 previous; Button1 GPIO2 next | adopted + source-derived; pending |
 | `seeedstudio_reterminal_e1002` | 800×480 Spectra, 0° | SPI SD CS14/PWR16, LittleFS fallback | green GPIO3 short refresh/long clear; left GPIO5 previous; right GPIO4 next | adopted + source-derived; priority pending |
 | `seeedstudio_reterminal_e1003` | 1872×1404 GC16, 0° | SPI SD CS14/PWR39, LittleFS fallback | refresh GPIO3 short refresh/long clear; left GPIO5 previous; right GPIO4 next | adopted + source-derived; pending |
@@ -19,6 +20,7 @@ Buttons are source-defined active-low inputs and EXT1 wake candidates. Current r
 
 - **Waveshare:** display SPI SCLK10/MOSI11, DC8/CS9/RST12/BUSY13; AXP2101 on I²C 47/48, IRQ21; battery/USB/charging via PMIC; no dedicated clear/previous physical key. Its simultaneous USB+battery stability warning remains source documentation, not validation.
 - **XIAO EE02:** display SCLK7/MOSI9, DC10/CS44/CS1 41/RST38/BUSY4/EN43. Internal flash only; no external RTC in its HAL. USB detection relies on USB-Serial-JTAG host activity, so data-less chargers may be undetected.
+- **XIAO EE03:** single-CS IT8951/GC16 display uses SPI SCLK7/MOSI9/MISO8, CS44/RST38/BUSY-HRDY4/PWR_EN43; DC and second CS are unused. Internal flash only; no microSD. SHT40 uses I²C SCL41/SDA42; user LED GPIO21 is active-low. Automatic light sleep is disabled because interrupting the IT8951 image stream can corrupt the transfer.
 - **XIAO EE04:** display SCLK7/MOSI9, DC10/CS44/RST38/BUSY4/EN43. Internal flash only; the same USB-detection limitation applies.
 - **E1002:** display SCLK7/MOSI9/MISO8, DC11/CS10/RST12/BUSY13; RTC/sensor I²C 19/20; battery ADC GPIO1 gated by GPIO21; LED6 active-low. V1.2+ may expose SY6974B on separate I²C 39/40; earlier ETA6003 revisions lack that I²C capability, changing USB detection.
 - **E1003:** IT8951/GC16 display CS10/RST12/BUSY13, enable11/VCC21; RTC/SHT40/SY6974B share I²C 19/20; battery ADC1 enable40; automatic light sleep is disabled by its board definition.
