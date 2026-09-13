@@ -8,6 +8,8 @@ Prepare enabled albums under `/storage/images`; the firmware creates/uses a defa
 
 Normal cold boot starts local controls and storage-capable operation without waiting for Wi-Fi association. With complete credentials, the serialized connectivity owner attempts STA connection asynchronously; URL mode remains network-dependent for new downloads. With absent credentials, captive provisioning remains available while local controls continue. Network retry is serialized in the background every 15 minutes by default and does not replace valid displayed content.
 
+Current sequential rotation still progresses through the legacy NVS-backed numeric `last_idx`; separately, storage-rotation random repeat avoidance is already RAM-only and may forget the prior image after sleep/reset. The accepted target will replace `last_idx` with an identity-based local cursor retained in internal SoC RTC memory only across genuine deep-sleep wakes. Other resets and power loss will ignore retained bytes and restart deterministically under the no-cursor rules. This target is not implemented yet and does not use `.current.lnk` as navigation authority. Durable operator configuration and credentials continue to survive reset/power loss; periodic runtime bookkeeping remains pending follow-up removal.
+
 ## Captive portal
 
 The portal is an operator provisioning channel, not a prerequisite for local slideshow. Target parsing receives the full bounded request across partial receives, accepts field order variations, strictly decodes form encoding, and validates decoded WPA passphrases through 63 bytes. Malformed input must produce no partial activation. Never include passwords or complete request bodies in diagnostics.

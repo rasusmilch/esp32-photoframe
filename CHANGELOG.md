@@ -8,7 +8,19 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
 
 - Added repository-wide authority routing and adopted offline-first and compatibility requirements.
 - Added architecture, hardware, operations, testing, decision, and validation authorities.
-- No firmware runtime behavior changed.
+- Adopted a state-lifetime policy that reserves NVS/durable flash for operator configuration and
+  explicitly power-loss-durable state; slideshow position and periodic SNTP/OTA last-run
+  bookkeeping no longer require durable persistence. Removed `last_image` NVS persistence so
+  storage-rotation repeat avoidance is RAM-only and advances only after successful display;
+  `last_idx`, `last_fetch_err`, and periodic timestamp cleanup remains follow-up work.
+- Defined supported-board preservation from the authoritative board catalog/build matrix rather
+  than a fixed count, and required replacement work to remove directly superseded artifacts unless
+  a current accepted compatibility, migration, rollback, recovery, or equivalent need retains them.
+  No additional runtime cleanup or new board validation is claimed.
+- Selected exact `album/filename` identities, bytewise deterministic ordering, lexical missing-
+  cursor navigation, and internal RTC-only deep-sleep cursor continuity for the future `last_idx`
+  replacement. This changes authority/design only: `last_idx` removal and the RTC cursor remain
+  unimplemented, and no durable cursor persistence was added.
 
 ### Security
 

@@ -27,6 +27,8 @@ Result vocabulary is **verified locally**, **CI-verified**, **hardware-validated
 
 Update requirements when normative behavior changes; add or supersede significant policy/architecture decisions; record only observed validation; and update `CHANGELOG.md` in the same change for applicable user-visible, operational, security, compatibility, persistence, hardware, recovery, or significant governance changes. Update each domain document when its contract changes.
 
+When implementing a replacement, inspect and remove the directly superseded code, state, APIs, persistence mechanisms, tests, comments, and documentation that no longer serve a current accepted purpose. Do not retain duplicate or obsolete mechanisms as fallback or “just in case.” Retain a legacy, migration, compatibility, rollback, recovery, stored-data-transition, or interoperability path only when current accepted authority requires it, and make its purpose and required lifetime explicit in authority or source documentation. This rule requires cleanup within the replacement work's direct scope; it does not authorize unrelated repository-wide refactoring or speculative cleanup.
+
 Before changing GPIOs, buttons, wake sources, display, storage buses, RTC, sensors, charger/PMIC, battery monitoring, USB detection, light sleep, or deep sleep, inspect the relevant board definitions and `docs/HARDWARE.md`. Never infer one board from another.
 
 Never log passwords, tokens, complete credential files, authorization or secret custom headers, or complete provisioning bodies. Treat removable storage and captive-portal input as untrusted, validate before persistent activation, and preserve last-known-good credentials unless an operator explicitly resets or replaces them.
