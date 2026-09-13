@@ -17,6 +17,10 @@ This is the sole canonical changelog. Update it for user-visible behavior, opera
   than a fixed count, and required replacement work to remove directly superseded artifacts unless
   a current accepted compatibility, migration, rollback, recovery, or equivalent need retains them.
   No additional runtime cleanup or new board validation is claimed.
+- Selected exact `album/filename` identities, bytewise deterministic ordering, lexical missing-
+  cursor navigation, and internal RTC-only deep-sleep cursor continuity for the future `last_idx`
+  replacement. This changes authority/design only: `last_idx` removal and the RTC cursor remain
+  unimplemented, and no durable cursor persistence was added.
 
 ### Security
 

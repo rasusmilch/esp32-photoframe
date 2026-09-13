@@ -21,7 +21,7 @@ state. Deadlines remain default/configurable and saturating.
   `wifi.txt` import, Wi-Fi/provisioning initialization, then provisioning and connection decisions.
   Clear/timer/rotate fast-wake paths dispatch before the normal import. This ensures a verified
   imported device name is cached before the Wi-Fi manager derives its DHCP hostname.
-- **Local slideshow domain:** owns deterministic inventory, current identity, refresh, previous/next, and logical-position advancement after display success. Its active cursor is runtime state, not a per-navigation durable-write boundary.
+- **Local slideshow domain:** owns canonical inventory and identity, the identity-based cursor, refresh, previous/next, and logical-position advancement after display success. Its active cursor is runtime state with selected internal RTC deep-sleep continuity, not a per-navigation durable-write boundary.
 - **Credential-import transaction:** current implementation discovers the config path before root, parses and stages without side effects, preserves the current device name when omitted, commits SSID/password/name together, reopens and verifies, publishes caches, then deletes the exact source. Complete, absent, incomplete (exactly one credential key), and operational-error profiles are distinct. A valid candidate repairs an incomplete pair through the same commit; equality with a complete verified profile provides idempotent deletion-only recovery after deletion failure.
 - **Connectivity coordinator:** `connectivity_runtime.c` owns one long-lived command/event queue, immutable epoch/attempt/generation identity, retry-policy state, connection deadlines, mode-aware stop evidence, default-loop fence dispatch, quiet quarantine, and fail-closed reuse. `connectivity_lifecycle.c` is its dependency-free ordering model for host regression tests. Compatibility APIs may wait for a qualified result, but cannot call lifecycle-affecting driver APIs themselves.
 - **Provisioning service:** receives a complete bounded body, strictly decodes and validates candidates, then activates atomically.
@@ -40,7 +40,29 @@ State is classified by the lifetime that product correctness actually requires:
 2. **Runtime state** uses RAM and is disposable or reconstructable. Ordinary navigation position and scheduler bookkeeping are in this class, and cold boot must rebuild safe values rather than depend on flash bookkeeping.
 3. **Deep-sleep continuity state** may use RTC-retained memory when continuity materially improves behavior, but may be lost on reset or power removal. Any retained representation must include validity and version checks with safe fallback. It should not exist when reconstruction is simpler and harmless.
 
-The current implementation has removed the NVS-backed `last_image` mechanism: storage-rotation repeat avoidance now keeps only the most recently successful rotation image in volatile RAM and may forget it across deep sleep or reset. Remaining implementation debt includes `last_idx` in the `photoframe` NVS namespace for sequential progression, `last_fetch_err` for a changing fetch diagnostic across sleep/boot, and `sntp_sync` and `ota_check` in the `periodic` NVS namespace for periodic last-run timestamps. Follow-up implementation must remove or redesign those remaining NVS-backed runtime paths. Future local slideshow architecture must not depend on an NVS write for each rotation or navigation event; the still-Open image-identity design prevents this slice from adjudicating or redesigning `last_idx`. SNTP and OTA scheduling must not depend on durable last-run timestamps: optional RTC retention may bridge deep sleep, or a cold boot may restart the schedule and perform an extra harmless check, unless later accepted authority establishes a power-loss durability need.
+The current implementation has removed the NVS-backed `last_image` mechanism: storage-rotation repeat avoidance now keeps only the most recently successful rotation image in volatile RAM and may forget it across deep sleep or reset. Remaining implementation debt includes `last_idx` in the `photoframe` NVS namespace for sequential progression, `last_fetch_err` for a changing fetch diagnostic across sleep/boot, and `sntp_sync` and `ota_check` in the `periodic` NVS namespace for periodic last-run timestamps. Follow-up implementation must remove or redesign those remaining NVS-backed runtime paths. DEC-020 now resolves the identity and deep-sleep cursor target needed to replace `last_idx`, but that replacement is not implemented. Future local slideshow architecture must not depend on an NVS write for each rotation or navigation event. SNTP and OTA scheduling must not depend on durable last-run timestamps: optional RTC retention may bridge deep sleep, or a cold boot may restart the schedule and perform an extra harmless check, unless later accepted authority establishes a power-loss durability need.
+
+## Canonical local slideshow identity and cursor
+
+DEC-020 closes the local image-identity question for internal slideshow/navigation use. A canonical identity is the exact path relative to `IMAGE_DIRECTORY`, with no mount prefix or leading slash: `album-name/filename.ext` (for example, `Default/sunrise.png`). It includes both album and filename, preserves their exact byte spelling and case, and compares case-sensitively. A basename is insufficient across albums; an absolute `/storage/images/...` path is an execution path, not identity. This internal representation is not a new public API compatibility promise.
+
+The canonical inventory contains slideshow-eligible regular BMP, PNG, and EPDGZ files from currently enabled albums; direct JPEG discovery remains deferred. Exact duplicate identities are one logical item. Inventory construction must sort ascending by bytewise C-string `strcmp` over canonical identities and must not depend on filesystem `readdir()` order or enabled-album order.
+
+The cursor is the canonical identity of the last successfully committed local slideshow position. Display failure does not advance it. Given the sorted inventory:
+
+- empty inventory has no NEXT or PREVIOUS target;
+- with no cursor, NEXT selects the first identity and PREVIOUS the last;
+- with an exactly present cursor, NEXT selects the following identity and PREVIOUS the preceding identity, wrapping at each end;
+- with a missing cursor, NEXT selects the first identity strictly greater than the old cursor, wrapping to first if none exists, while PREVIOUS selects the greatest identity strictly less than the old cursor, wrapping to last if none exists; and
+- a one-item inventory wraps to that same item.
+
+A structurally valid identity retained after removal, rename, or album disable remains the insertion point for these missing-cursor rules. It is not replaced by a numeric position.
+
+Normal scheduled and manual operation spans deep-sleep restarts, so the target uses internal ESP32 RTC-retained memory for cursor continuity. Retained cursor data represents the canonical identity, carries an explicit schema version and bounded structural validity, and falls back safely when absent, malformed, incompatible, or invalid. It may be consumed only following a genuine deep-sleep wake. Power loss, power-on, software, panic/watchdog, brownout, and every other non-deep-sleep reset treat the cursor as absent even if retained bytes remain. This is internal SoC memory, not an external PCF8563 or other board RTC, and it performs no NVS/flash write.
+
+Display publication remains a separate concern: `current_image` and `.current.lnk` report displayed content and are not cursor authority or a cursor reconstruction source. RAM-only `last_displayed_image` remains separate best-effort random-repeat state and may be forgotten across sleep/reset.
+
+This is target architecture, not current implementation. The numeric, NVS-backed `last_idx` still drives current sequential traversal and remains debt until replaced; no migration or RTC cursor exists yet.
 
 ## Production physical-attempt fence
 
@@ -55,4 +77,4 @@ The production owner now implements that lifecycle boundary without importing th
 
 ## Open implementation design questions
 
-Later design must still settle image-identity representation. Retry ownership is now resolved by DEC-017. The import persistence boundary is resolved without credential-format migration: existing NVS keys share one explicit commit and readback, with equality-based recovery rather than a secret-derived marker. The provisioning body ceiling is 758 bytes. These technical choices cannot weaken `docs/GOVERNANCE.md`.
+Retry ownership is resolved by DEC-017, and local slideshow identity/cursor semantics are resolved by DEC-020. The import persistence boundary is resolved without credential-format migration: existing NVS keys share one explicit commit and readback, with equality-based recovery rather than a secret-derived marker. The provisioning body ceiling is 758 bytes. These technical choices cannot weaken `docs/GOVERNANCE.md`.
